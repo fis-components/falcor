@@ -14,67 +14,60 @@
  * permissions and limitations under the License.
  */
 (function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.falcor = f()}})(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
-var falcor = require(30);
-var jsong = require(156);
+var falcor = require(33);
+var jsong = require(133);
 
 falcor.atom = jsong.atom;
 falcor.ref = jsong.ref;
 falcor.error = jsong.error;
 falcor.pathValue = jsong.pathValue;
 
-falcor.HttpDataSource = require(141);
+falcor.HttpDataSource = require(128);
 
 module.exports = falcor;
 
-},{"141":141,"156":156,"30":30}],2:[function(require,module,exports){
+},{"128":128,"133":133,"33":33}],2:[function(require,module,exports){
 var ModelRoot = require(4);
 var ModelDataSourceAdapter = require(3);
 
-var RequestQueue = require(54);
-var GetResponse = require(57);
-var ModelResponse = require(60);
-var SetResponse = require(61);
-var CallResponse = require(56);
-var InvalidateResponse = require(59);
+var RequestQueue = require(56);
+var ModelResponse = require(65);
+var SetResponse = require(66);
+var CallResponse = require(62);
+var InvalidateResponse = require(64);
 
-var ASAPScheduler = require(62);
-var TimeoutScheduler = require(64);
-var ImmediateScheduler = require(63);
+var ASAPScheduler = require(74);
+var TimeoutScheduler = require(76);
+var ImmediateScheduler = require(75);
 
-var identity = require(97);
-var arrayClone = require(80);
-var arraySlice = require(84);
+var arrayClone = require(82);
+var arraySlice = require(85);
 
-var collectLru = require(48);
-var pathSyntax = require(160);
+var collectLru = require(50);
+var pathSyntax = require(137);
 
-var getSize = require(93);
-var isObject = require(104);
-var isFunction = require(101);
-var isPathValue = require(105);
-var isPrimitive = require(106);
-var isJsonEnvelope = require(102);
-var isJsonGraphEnvelope = require(103);
+var getSize = require(89);
+var isObject = require(100);
+var isFunction = require(97);
+var isPrimitive = require(102);
+var isJSONEnvelope = require(98);
+var isJSONGraphEnvelope = require(99);
 
-var setCache = require(65);
-var setJsonGraphAsJsonDense = require(66);
-var jsong = require(156);
+var setCache = require(78);
+var setJSONGraphs = require(77);
+var jsong = require(133);
 var ID = 0;
-var validateInput = require(123);
+var validateInput = require(115);
 var noOp = function() {};
-
-var GET_VALID_INPUT = {
-    path: true,
-    pathValue: true,
-    pathSyntax: true,
-    json: true
-};
+var getCache = require(15);
+var get = require(20);
 var SET_VALID_INPUT = {
     pathValue: true,
     pathSyntax: true,
     json: true,
     jsonGraph: true
 };
+var GET_VALID_INPUT = require(73);
 
 module.exports = Model;
 
@@ -170,15 +163,16 @@ Model.prototype._collectRatio = 0.75;
  * @param {...PathSet} path - the path(s) to retrieve
  * @return {ModelResponse.<JSONEnvelope>} - the requested data as JSON
  */
-Model.prototype.get = function get() {
-    var out = validateInput(arguments, GET_VALID_INPUT, "get");
-    if (out !== true) {
-        return new ModelResponse(function(o) {
-            o.onError(out);
-        });
-    }
-    return this._get.apply(this, arguments);
-};
+Model.prototype.get = require(72);
+
+/**
+ * The get method retrieves several {@link Path}s or {@link PathSet}s from a {@link Model}. The get method loads each value into a JSON object and returns in a ModelResponse.
+ * @function
+ * @private
+ * @param {Array.<PathSet>} paths - the path(s) to retrieve
+ * @return {ModelResponse.<JSONEnvelope>} - the requested data as JSON
+ */
+Model.prototype._getWithPaths = require(71);
 
 /**
  * Sets the value at one or more places in the JSONGraph model. The set method accepts one or more {@link PathValue}s, each of which is a combination of a location in the document and the value to place there.  In addition to accepting  {@link PathValue}s, the set method also returns the values after the set operation is complete.
@@ -208,35 +202,16 @@ Model.prototype.preload = function preload() {
             o.onError(out);
         });
     }
-    var args = Array.prototype.slice.apply(arguments, []);
-    var preloadOperation = this._get.apply(this, args.concat(identity));
-    return new ModelResponse(function preloadModelResponse(observer) {
-        preloadOperation.
-            subscribe(
-                identity,
-                function(e) {
-                    observer.onError(e);
-                }, function() {
-                    observer.onCompleted();
-                });
+    var args = Array.prototype.slice.call(arguments);
+    var self = this;
+    return new ModelResponse(function(obs) {
+        return self.get.apply(self, args).subscribe(function() {
+        }, function(err) {
+            obs.onError(err);
+        }, function() {
+            obs.onCompleted();
+        });
     });
-};
-
-Model.prototype._get = function _get() {
-    var args;
-    var argsIdx = -1;
-    var argsLen = arguments.length;
-    var selector = arguments[argsLen - 1];
-    if (isFunction(selector)) {
-        argsLen = argsLen - 1;
-    } else {
-        selector = void 0;
-    }
-    args = new Array(argsLen);
-    while (++argsIdx < argsLen) {
-        args[argsIdx] = arguments[argsIdx];
-    }
-    return GetResponse.create(this, args, selector);
 };
 
 Model.prototype._set = function _set() {
@@ -360,21 +335,7 @@ Model.prototype.deref = require(5);
 
  // The code above prints "Jim" to the console.
  */
-Model.prototype.getValue = function getValue(path) {
-    var parsedPath = pathSyntax.fromPath(path);
-    var pathIdx = 0;
-    var pathLen = parsedPath.length;
-    while (++pathIdx < pathLen) {
-        if (typeof parsedPath[pathIdx] === "object") {
-            /* eslint-disable no-loop-func */
-            return new ModelResponse(function(o) {
-                o.onError(new Error("Paths must be simple paths"));
-            });
-            /* eslint-enable no-loop-func */
-        }
-    }
-    return this._get(parsedPath, identity);
-};
+Model.prototype.getValue = require(17);
 
 /**
  * Set value for a single {@link Path}.
@@ -392,22 +353,7 @@ Model.prototype.getValue = function getValue(path) {
 
  // The code above prints "Jim" to the console.
  */
-Model.prototype.setValue = function setValue(pathArg, valueArg) {
-    var value = isPathValue(pathArg) ? pathArg : Model.pathValue(pathArg, valueArg);
-    var pathIdx = 0;
-    var path = value.path;
-    var pathLen = path.length;
-    while (++pathIdx < pathLen) {
-        if (typeof path[pathIdx] === "object") {
-            /* eslint-disable no-loop-func */
-            return new ModelResponse(function(o) {
-                o.onError(new Error("Paths must be simple paths"));
-            });
-            /* eslint-enable no-loop-func */
-        }
-    }
-    return this._set(value, identity);
-};
+Model.prototype.setValue = require(80);
 
 // TODO: Does not throw if given a PathSet rather than a Path, not sure if it should or not.
 // TODO: Doc not accurate? I was able to invoke directly against the Model, perhaps because I don't have a data source?
@@ -419,9 +365,9 @@ Model.prototype.setValue = function setValue(pathArg, valueArg) {
  * @arg {Path} path - the path to retrieve
  * @return {*} - the value for the specified path
  */
-Model.prototype._getValueSync = require(21);
+Model.prototype._getValueSync = require(25);
 
-Model.prototype._setValueSync = require(78);
+Model.prototype._setValueSync = require(81);
 
 Model.prototype._derefSync = require(6);
 
@@ -433,17 +379,20 @@ Model.prototype.setCache = function modelSetCache(cacheOrJSONGraphEnvelope) {
     var cache = this._root.cache;
     if (cacheOrJSONGraphEnvelope !== cache) {
         var modelRoot = this._root;
+        var boundPath = this._path;
+        this._path = [];
         this._root.cache = {};
         if (typeof cache !== "undefined") {
             collectLru(modelRoot, modelRoot.expired, getSize(cache), 0);
         }
-        if (isJsonGraphEnvelope(cacheOrJSONGraphEnvelope)) {
-            setJsonGraphAsJsonDense(this, [cacheOrJSONGraphEnvelope], []);
-        } else if (isJsonEnvelope(cacheOrJSONGraphEnvelope)) {
-            setCache(this, cacheOrJSONGraphEnvelope.json);
+        if (isJSONGraphEnvelope(cacheOrJSONGraphEnvelope)) {
+            setJSONGraphs(this, [cacheOrJSONGraphEnvelope]);
+        } else if (isJSONEnvelope(cacheOrJSONGraphEnvelope)) {
+            setCache(this, [cacheOrJSONGraphEnvelope]);
         } else if (isObject(cacheOrJSONGraphEnvelope)) {
-            setCache(this, cacheOrJSONGraphEnvelope);
+            setCache(this, [{ json: cacheOrJSONGraphEnvelope }]);
         }
+        this._path = boundPath;
     } else if (typeof cache === "undefined") {
         this._root.cache = {};
     }
@@ -458,25 +407,17 @@ Model.prototype.setCache = function modelSetCache(cacheOrJSONGraphEnvelope) {
  // Storing the boxshot of the first 10 titles in the first 10 genreLists to local storage.
  localStorage.setItem('cache', JSON.stringify(model.getCache("genreLists[0...10][0...10].boxshot")));
  */
-Model.prototype.getCache = function getCache() {
+Model.prototype.getCache = function _getCache() {
     var paths = arraySlice(arguments);
     if (paths.length === 0) {
-        paths[0] = {
-            json: this._root.cache
-        };
+        return getCache(this._root.cache);
     }
-    var result;
-    var model = this.
-        withoutDataSource().
-        _materialize();
 
-    this.
-        get.apply(model, paths).
-        _toJSONG().
-        subscribe(function(envelope) {
-            result = envelope.jsonGraph || envelope.jsong;
-        });
-    return result;
+    var result = [{}];
+    var path = this._path;
+    get.getWithPathsAsJSONGraph(this, paths, result);
+    this._path = path;
+    return result[0].jsonGraph;
 };
 
 /**
@@ -530,7 +471,7 @@ Model.prototype.batch = function batch(schedulerOrDelayArg) {
     } else if (!schedulerOrDelay || !schedulerOrDelay.schedule) {
         schedulerOrDelay = new ASAPScheduler();
     }
-    var clone = this.clone();
+    var clone = this._clone();
     clone._request = new RequestQueue(clone, schedulerOrDelay);
 
     return clone;
@@ -660,41 +601,34 @@ Model.prototype.getPath = function getPath() {
     return arrayClone(this._path);
 };
 
-var getWalk = require(17);
-
 Model.prototype._getBoundValue = require(14);
-Model.prototype._getVersion = require(16);
-Model.prototype._getValueSync = require(15);
-Model.prototype._getPathValuesAsValues = require(13)(getWalk);
-Model.prototype._getPathValuesAsJSON = require(10)(getWalk);
-Model.prototype._getPathValuesAsPathMap = require(12)(getWalk);
-Model.prototype._getPathValuesAsJSONG = require(11)(getWalk);
-Model.prototype._getPathMapsAsValues = require(13)(getWalk);
-Model.prototype._getPathMapsAsJSON = require(10)(getWalk);
-Model.prototype._getPathMapsAsPathMap = require(12)(getWalk);
-Model.prototype._getPathMapsAsJSONG = require(11)(getWalk);
+Model.prototype._getVersion = require(19);
+Model.prototype._getValueSync = require(18);
 
-Model.prototype._setPathValuesAsJSON = require(74);
-Model.prototype._setPathValuesAsJSONG = require(75);
-Model.prototype._setPathValuesAsPathMap = require(76);
-Model.prototype._setPathValuesAsValues = require(77);
+Model.prototype._getPathValuesAsPathMap = get.getWithPathsAsPathMap;
+Model.prototype._getPathValuesAsJSONG = get.getWithPathsAsJSONGraph;
 
-Model.prototype._setPathMapsAsJSON = require(70);
-Model.prototype._setPathMapsAsJSONG = require(71);
-Model.prototype._setPathMapsAsPathMap = require(72);
-Model.prototype._setPathMapsAsValues = require(73);
+Model.prototype._setPathValuesAsJSON = require(79);
+Model.prototype._setPathValuesAsJSONG = require(79);
+Model.prototype._setPathValuesAsPathMap = require(79);
+Model.prototype._setPathValuesAsValues = require(79);
 
-Model.prototype._setJSONGsAsJSON = require(66);
-Model.prototype._setJSONGsAsJSONG = require(67);
-Model.prototype._setJSONGsAsPathMap = require(68);
-Model.prototype._setJSONGsAsValues = require(69);
+Model.prototype._setPathMapsAsJSON = require(78);
+Model.prototype._setPathMapsAsJSONG = require(78);
+Model.prototype._setPathMapsAsPathMap = require(78);
+Model.prototype._setPathMapsAsValues = require(78);
 
-Model.prototype._setCache = require(65);
+Model.prototype._setJSONGsAsJSON = require(77);
+Model.prototype._setJSONGsAsJSONG = require(77);
+Model.prototype._setJSONGsAsPathMap = require(77);
+Model.prototype._setJSONGsAsValues = require(77);
 
-Model.prototype._invalidatePathValuesAsJSON = require(47);
-Model.prototype._invalidatePathMapsAsJSON = require(46);
+Model.prototype._setCache = require(78);
 
-},{"10":10,"101":101,"102":102,"103":103,"104":104,"105":105,"106":106,"11":11,"12":12,"123":123,"13":13,"14":14,"15":15,"156":156,"16":16,"160":160,"17":17,"21":21,"3":3,"4":4,"46":46,"47":47,"48":48,"5":5,"54":54,"56":56,"57":57,"59":59,"6":6,"60":60,"61":61,"62":62,"63":63,"64":64,"65":65,"66":66,"67":67,"68":68,"69":69,"70":70,"71":71,"72":72,"73":73,"74":74,"75":75,"76":76,"77":77,"78":78,"80":80,"84":84,"93":93,"97":97}],3:[function(require,module,exports){
+Model.prototype._invalidatePathValuesAsJSON = require(49);
+Model.prototype._invalidatePathMapsAsJSON = require(48);
+
+},{"100":100,"102":102,"115":115,"133":133,"137":137,"14":14,"15":15,"17":17,"18":18,"19":19,"20":20,"25":25,"3":3,"4":4,"48":48,"49":49,"5":5,"50":50,"56":56,"6":6,"62":62,"64":64,"65":65,"66":66,"71":71,"72":72,"73":73,"74":74,"75":75,"76":76,"77":77,"78":78,"79":79,"80":80,"81":81,"82":82,"85":85,"89":89,"97":97,"98":98,"99":99}],3:[function(require,module,exports){
 function ModelDataSourceAdapter(model) {
     this._model = model._materialize().boxValues().treatErrorsAsValues();
 }
@@ -715,8 +649,9 @@ ModelDataSourceAdapter.prototype.call = function call(path, args, suffixes, path
 module.exports = ModelDataSourceAdapter;
 
 },{}],4:[function(require,module,exports){
-var isFunction = require(101);
-var ImmediateScheduler = require(63);
+var isFunction = require(97);
+var hasOwn = require(92);
+var ImmediateScheduler = require(75);
 
 function ModelRoot(o) {
 
@@ -745,8 +680,7 @@ ModelRoot.prototype.errorSelector = function errorSelector(x, y) {
     return y;
 };
 ModelRoot.prototype.comparator = function comparator(a, b) {
-    if (Boolean(a) && typeof a === "object" && a.hasOwnProperty("value") &&
-        Boolean(b) && typeof b === "object" && b.hasOwnProperty("value")) {
+    if (hasOwn(a, "value") && hasOwn(b, "value")) {
         return a.value === b.value;
     }
     return a === b;
@@ -754,9 +688,9 @@ ModelRoot.prototype.comparator = function comparator(a, b) {
 
 module.exports = ModelRoot;
 
-},{"101":101,"63":63}],5:[function(require,module,exports){
-var Rx = require(182);
-var pathSyntax = require(160);
+},{"75":75,"92":92,"97":97}],5:[function(require,module,exports){
+var Rx = require(161);
+var pathSyntax = require(137);
 
 module.exports = function deref(boundPathArg) {
 
@@ -795,28 +729,33 @@ module.exports = function deref(boundPathArg) {
     flatMap(function(boundModel) {
         if (Boolean(boundModel)) {
             if (pathsCount > 0) {
-                return boundModel._get.apply(boundModel, paths.concat(function() {
-                    return boundModel;
-                })).catch(Rx.Observable.empty());
+                return boundModel.get.
+                    apply(boundModel, paths).
+                    map(function() {
+                        return boundModel;
+                    }).
+                    catch(Rx.Observable.empty());
             }
             return Rx.Observable.return(boundModel);
         } else if (pathsCount > 0) {
-            return (model._get.apply(model, paths.map(function(path) {
+            return model.
+                get.apply(model, paths.map(function(path) {
                     return boundPath.concat(path);
-                }).concat(function() {
+                })).
+                map(function() {
                     return model.deref(boundPath);
-                }))
-                .mergeAll());
+                }).
+                mergeAll();
         }
         return Rx.Observable.empty();
     });
 };
 
-},{"160":160,"182":182}],6:[function(require,module,exports){
-var $error = require(126);
-var pathSyntax = require(160);
+},{"137":137,"161":161}],6:[function(require,module,exports){
+var $error = require(118);
+var pathSyntax = require(137);
 var getBoundValue = require(14);
-var getType = require(94);
+var getType = require(91);
 
 module.exports = function derefSync(boundPathArg) {
 
@@ -826,7 +765,7 @@ module.exports = function derefSync(boundPathArg) {
         throw new Error("Model#derefSync must be called with an Array path.");
     }
 
-    var boundValue = this._syncCheck("bindSync") && getBoundValue(this, this._path.concat(boundPath));
+    var boundValue = getBoundValue(this, this._path.concat(boundPath));
 
     var path = boundValue.path;
     var node = boundValue.value;
@@ -852,7 +791,31 @@ module.exports = function derefSync(boundPathArg) {
     return this._clone({ _path: path });
 };
 
-},{"126":126,"14":14,"160":160,"94":94}],7:[function(require,module,exports){
+},{"118":118,"137":137,"14":14,"91":91}],7:[function(require,module,exports){
+/**
+ * When a bound model attempts to retrieve JSONGraph it should throw an
+ * error.
+ *
+ * @private
+ */
+function BoundJSONGraphModelError() {
+    this.message = BoundJSONGraphModelError.message;
+    this.stack = (new Error()).stack;
+}
+
+// instanceof will be an error, but stack will be correct because its defined in the constructor.
+BoundJSONGraphModelError.prototype = new Error();
+BoundJSONGraphModelError.prototype.name = "BoundJSONGraphModelError";
+BoundJSONGraphModelError.message =
+    "It is not legal to use the JSON Graph " +
+    "format from a bound Model. JSON Graph format" +
+    " can only be used from a root model.";
+
+module.exports = BoundJSONGraphModelError;
+
+},{}],8:[function(require,module,exports){
+var NAME = "InvalidModelError";
+var MESSAGE = "The boundPath of the model is not valid since a value or error was found before the path end.";
 /**
  * An InvalidModelError can only happen when a user binds, whether sync
  * or async to shorted value.  See the unit tests for examples.
@@ -861,7 +824,7 @@ module.exports = function derefSync(boundPathArg) {
  * @private
  */
 function InvalidModelError(boundPath, shortedPath) {
-    this.message = "The boundPath of the model is not valid since a value or error was found before the path end.";
+    this.message = MESSAGE;
     this.stack = (new Error()).stack;
     this.boundPath = boundPath;
     this.shortedPath = shortedPath;
@@ -869,11 +832,13 @@ function InvalidModelError(boundPath, shortedPath) {
 
 // instanceof will be an error, but stack will be correct because its defined in the constructor.
 InvalidModelError.prototype = new Error();
-InvalidModelError.prototype.name = "InvalidModel";
+InvalidModelError.prototype.name = NAME;
+InvalidModelError.name = NAME;
+InvalidModelError.message = MESSAGE;
 
 module.exports = InvalidModelError;
 
-},{}],8:[function(require,module,exports){
+},{}],9:[function(require,module,exports){
 var NAME = "InvalidSourceError";
 /**
  * InvalidSourceError happens when a dataSource syncronously throws
@@ -899,17 +864,51 @@ InvalidSourceError.is = function(e) {
 
 module.exports = InvalidSourceError;
 
-},{}],9:[function(require,module,exports){
-var hardLink = require(23);
+},{}],10:[function(require,module,exports){
+var NAME = "MaxRetryExceededError";
+/**
+ * A request can only be retried up to a specified limit.  Once that
+ * limit is exceeded, then an error will be thrown.
+ *
+ * @private
+ */
+function MaxRetryExceededError() {
+    this.message = "The allowed number of retries have been exceeded.";
+    this.stack = (new Error()).stack;
+}
+
+// instanceof will be an error, but stack will be correct because its defined
+// in the constructor.
+MaxRetryExceededError.prototype = new Error();
+MaxRetryExceededError.prototype.name = NAME;
+MaxRetryExceededError.name = NAME;
+MaxRetryExceededError.is = function(e) {
+    return e && e.name === NAME;
+};
+
+module.exports = MaxRetryExceededError;
+
+},{}],11:[function(require,module,exports){
+/**
+ * The SHORTED constant.  Since what is returned from a
+ * cache position lookop will always be an object, any non
+ * object will do fine for a constant.
+ * @private
+ */
+module.exports = 1;
+
+},{}],12:[function(require,module,exports){
+var hardLink = require(27);
 var createHardlink = hardLink.create;
-var onValue = require(20);
-var isExpired = require(24);
-var $ref = require(127);
-var __context = require(31);
-var promote = require(27).promote;
+var onValue = require(23);
+var isExpired = require(28);
+var $ref = require(119);
+var __context = require(34);
+var promote = require(30).promote;
 
 /* eslint-disable no-constant-condition */
-function followReference(model, root, nodeArg, referenceContainerArg, referenceArg, seed, outputFormat) {
+function followReference(model, root, nodeArg, referenceContainerArg,
+                         referenceArg, seed, isJSONG) {
 
     var node = nodeArg;
     var reference = referenceArg;
@@ -954,8 +953,9 @@ function followReference(model, root, nodeArg, referenceContainerArg, referenceA
 
                 // Restart the reference follower.
                 if (type === $ref) {
-                    if (outputFormat === "JSONG") {
-                        onValue(model, next, seed, null, null, reference, null, outputFormat);
+                    if (isJSONG) {
+                        onValue(model, next, seed, null, null, null,
+                                reference, reference.length, isJSONG);
                     } else {
                         promote(model, next);
                     }
@@ -990,216 +990,72 @@ function followReference(model, root, nodeArg, referenceContainerArg, referenceA
 
 module.exports = followReference;
 
-},{"127":127,"20":20,"23":23,"24":24,"27":27,"31":31}],10:[function(require,module,exports){
-var getBoundValue = require(14);
-var isPathValue = require(26);
+},{"119":119,"23":23,"27":27,"28":28,"30":30,"34":34}],13:[function(require,module,exports){
+var getCachePosition = require(16);
+var InvalidModelError = require(8);
+var BoundJSONGraphModelError = require(7);
+var SHORTED = require(11);
 
-module.exports = function(walk) {
-    return function getAsJSON(model, paths, valuesArg) {
-        var values = valuesArg;
+module.exports = function get(walk, isJSONG) {
+    return function innerGet(model, paths, seed) {
+        var valueNode = seed[0];
         var results = {
-            values: [],
-            errors: [],
-            requestedPaths: [],
-            optimizedPaths: [],
-            requestedMissingPaths: [],
-            optimizedMissingPaths: []
+            values: seed,
+            optimizedPaths: []
         };
-        var requestedMissingPaths = results.requestedMissingPaths;
-        var inputFormat = Array.isArray(paths[0]) || isPathValue(paths[0]) ?
-            "Paths" : "JSON";
         var cache = model._root.cache;
         var boundPath = model._path;
-        var currentCachePosition;
-        var missingIdx = 0;
-        var boundOptimizedPath, optimizedPath;
-        var i, j, len, bLen;
-        var valueNode, length;
+        var currentCachePosition = cache;
+        var optimizedPath, optimizedLength = boundPath.length;
+        var i, len;
+        var requestedPath = [];
 
-        results.values = values;
-        if (!values) {
-            values = [];
+        // If the model is bound, then get that cache position.
+        if (optimizedLength) {
+
+            // JSONGraph output cannot ever be bound or else it will
+            // throw an error.
+            if (isJSONG) {
+                return {
+                    criticalError: new BoundJSONGraphModelError()
+                };
+            }
+            currentCachePosition = getCachePosition(model, boundPath);
+
+            // If there was a short, then we 'throw an error' to the outside
+            // calling function which will onError the observer.
+            if (currentCachePosition === SHORTED) {
+                return {
+                    criticalError: new InvalidModelError(boundPath, boundPath)
+                };
+            }
+
+            // We need to get the new cache position and copy the bound
+            // path.
+            optimizedPath = [];
+            for (i = 0; i < optimizedLength; ++i) {
+                optimizedPath[i] = boundPath[i];
+            }
         }
-        if (boundPath.length) {
-            var boundValue = getBoundValue(model, boundPath);
-            currentCachePosition = boundValue.value;
-            optimizedPath = boundOptimizedPath = boundValue.path;
-        } else {
-            currentCachePosition = cache;
-            optimizedPath = boundOptimizedPath = [];
+
+        // Update the optimized path if we
+        else {
+            optimizedPath = [];
+            optimizedLength = 0;
         }
 
         for (i = 0, len = paths.length; i < len; i++) {
-            valueNode = void 0;
-            var pathSet = paths[i];
-            if (values[i]) {
-                valueNode = values[i];
-            }
-            if (len > 1) {
-                optimizedPath = [];
-                for (j = 0, bLen = boundOptimizedPath.length; j < bLen; j++) {
-                    optimizedPath[j] = boundOptimizedPath[j];
-                }
-            }
-            if (inputFormat === "JSON") {
-                pathSet = pathSet.json;
-            } else if (pathSet.path) {
-                pathSet = pathSet.path;
-            }
-
-            walk(model, cache, currentCachePosition, pathSet, 0, valueNode, [], results, optimizedPath, [], inputFormat, "JSON");
-            if (missingIdx < requestedMissingPaths.length) {
-                for (j = missingIdx, length = requestedMissingPaths.length; j < length; j++) {
-                    requestedMissingPaths[j].pathSetIndex = i;
-                }
-                missingIdx = length;
-            }
-        }
-
-        return results;
-    };
-};
-
-},{"14":14,"26":26}],11:[function(require,module,exports){
-var isPathValue = require(26);
-
-module.exports = function(walk) {
-    return function getAsJSONG(model, paths, values) {
-        var results = {
-            values: [],
-            errors: [],
-            requestedPaths: [],
-            optimizedPaths: [],
-            requestedMissingPaths: [],
-            optimizedMissingPaths: []
-        };
-        var inputFormat = Array.isArray(paths[0]) || isPathValue(paths[0]) ?
-            "Paths" : "JSON";
-        results.values = values;
-        var cache = model._root.cache;
-        var boundPath = model._path;
-        var currentCachePosition;
-        if (boundPath.length) {
-            throw new Error("It is not legal to use the JSON Graph format from a bound Model. JSON Graph format can only be used from a root model.");
-        } else {
-            currentCachePosition = cache;
-        }
-
-        for (var i = 0, len = paths.length; i < len; i++) {
-            var pathSet = paths[i];
-            if (inputFormat === "JSON") {
-                pathSet = pathSet.json;
-            } else if (pathSet.path) {
-                pathSet = pathSet.path;
-            }
-            walk(model, cache, currentCachePosition, pathSet, 0, values[0], [], results, [], [], inputFormat, "JSONG");
+            walk(model, cache, currentCachePosition, paths[i], 0,
+                 valueNode, results, requestedPath, optimizedPath,
+                 optimizedLength, isJSONG);
         }
         return results;
     };
 };
 
-},{"26":26}],12:[function(require,module,exports){
-var getBoundValue = require(14);
-var isPathValue = require(26);
-
-module.exports = function(walk) {
-    return function getAsPathMap(model, paths, values) {
-        var valueNode;
-        var results = {
-            values: [],
-            errors: [],
-            requestedPaths: [],
-            optimizedPaths: [],
-            requestedMissingPaths: [],
-            optimizedMissingPaths: []
-        };
-        var inputFormat = Array.isArray(paths[0]) || isPathValue(paths[0]) ?
-            "Paths" : "JSON";
-        valueNode = values[0];
-        results.values = values;
-
-        var cache = model._root.cache;
-        var boundPath = model._path;
-        var currentCachePosition;
-        var optimizedPath, boundOptimizedPath;
-        if (boundPath.length) {
-            var boundValue = getBoundValue(model, boundPath);
-            currentCachePosition = boundValue.value;
-            optimizedPath = boundOptimizedPath = boundValue.path;
-        } else {
-            currentCachePosition = cache;
-            optimizedPath = boundOptimizedPath = [];
-        }
-
-        for (var i = 0, len = paths.length; i < len; i++) {
-            if (len > 1) {
-                optimizedPath = [];
-                for (var j = 0, bLen = boundOptimizedPath.length; j < bLen; j++) {
-                    optimizedPath[j] = boundOptimizedPath[j];
-                }
-            }
-            var pathSet = paths[i];
-            if (inputFormat === "JSON") {
-                pathSet = pathSet.json;
-            } else if (pathSet.path) {
-                pathSet = pathSet.path;
-            }
-            walk(model, cache, currentCachePosition, pathSet, 0, valueNode, [], results, optimizedPath, [], inputFormat, "PathMap");
-        }
-        return results;
-    };
-};
-
-},{"14":14,"26":26}],13:[function(require,module,exports){
-var getBoundValue = require(14);
-var isPathValue = require(26);
-module.exports = function(walk) {
-    return function getAsValues(model, paths, onNext) {
-        var results = {
-            values: [],
-            errors: [],
-            requestedPaths: [],
-            optimizedPaths: [],
-            requestedMissingPaths: [],
-            optimizedMissingPaths: []
-        };
-        var inputFormat = Array.isArray(paths[0]) || isPathValue(paths[0]) ?
-            "Paths" : "JSON";
-        var cache = model._root.cache;
-        var boundPath = model._path;
-        var currentCachePosition;
-        var optimizedPath, boundOptimizedPath;
-        if (boundPath.length) {
-            var boundValue = getBoundValue(model, boundPath);
-            currentCachePosition = boundValue.value;
-            optimizedPath = boundOptimizedPath = boundValue.path;
-        } else {
-            currentCachePosition = cache;
-            optimizedPath = boundOptimizedPath = [];
-        }
-
-        for (var i = 0, len = paths.length; i < len; i++) {
-            if (len > 1) {
-                optimizedPath = [];
-                for (var j = 0, bLen = boundOptimizedPath.length; j < bLen; j++) {
-                    optimizedPath[j] = boundOptimizedPath[j];
-                }
-            }
-            var pathSet = paths[i];
-            if (inputFormat === "JSON") {
-                pathSet = pathSet.json;
-            } else if (pathSet.path) {
-                pathSet = pathSet.path;
-            }
-            walk(model, cache, currentCachePosition, pathSet, 0, onNext, null, results, optimizedPath, [], inputFormat, "Values");
-        }
-        return results;
-    };
-};
-
-},{"14":14,"26":26}],14:[function(require,module,exports){
-var getValueSync = require(15);
-var InvalidModelError = require(7);
+},{"11":11,"16":16,"7":7,"8":8}],14:[function(require,module,exports){
+var getValueSync = require(18);
+var InvalidModelError = require(8);
 
 module.exports = function getBoundValue(model, pathArg) {
 
@@ -1244,14 +1100,132 @@ module.exports = function getBoundValue(model, pathArg) {
     };
 };
 
-},{"15":15,"7":7}],15:[function(require,module,exports){
-var followReference = require(9);
-var clone = require(22);
-var isExpired = require(24);
-var promote = require(27).promote;
-var $ref = require(127);
-var $atom = require(125);
-var $error = require(126);
+},{"18":18,"8":8}],15:[function(require,module,exports){
+var $modelCreated = require(38);
+var clone = require(26);
+var prefix = require(41);
+
+/**
+ * decends and copies the cache.
+ */
+module.exports = function getCache(cache) {
+    var out = {};
+    _copyCache(cache, out);
+
+    return out;
+};
+
+function _copyCache(node, out, fromKey) {
+    // copy and return
+
+    Object.
+        keys(node).
+        filter(function(k) {
+            return k[0] !== prefix && k !== "$size";
+        }).
+        forEach(function(key) {
+            var cacheNext = node[key];
+            var outNext = out[key];
+
+            if (!outNext) {
+                outNext = out[key] = {};
+            }
+
+            // Paste the node into the out cache.
+            if (cacheNext.$type) {
+                var isObject = cacheNext.value && typeof cacheNext.value === "object";
+                var isUserCreatedcacheNext = !node[$modelCreated];
+                var value;
+                if (isObject || isUserCreatedcacheNext) {
+                    value = clone(cacheNext);
+                } else {
+                    value = cacheNext.value;
+                }
+
+                out[key] = value;
+                return;
+            }
+
+            _copyCache(cacheNext, outNext, key);
+        });
+}
+
+},{"26":26,"38":38,"41":41}],16:[function(require,module,exports){
+var SHORTED = require(11);
+/**
+ * getCachePosition makes a fast walk to the bound value since all bound
+ * paths are the most possible optimized path.
+ *
+ * @param {Model} model -
+ * @param {Array} path -
+ * @returns {Mixed} - undefined if there is nothing in this position.
+ * @private
+ */
+module.exports = function getCachePosition(model, path) {
+    var currentCachePosition = model._root.cache;
+    var depth = -1;
+    var maxDepth = path.length;
+
+    // The loop is simple now, we follow the current cache position until
+    //
+    while (++depth < maxDepth &&
+           currentCachePosition && !currentCachePosition.$type) {
+
+        currentCachePosition = currentCachePosition[path[depth]];
+    }
+
+    if (depth !== maxDepth && currentCachePosition) {
+        return SHORTED;
+    }
+
+    return currentCachePosition;
+};
+
+},{"11":11}],17:[function(require,module,exports){
+var ModelResponse = require(65);
+var pathSyntax = require(137);
+
+module.exports = function getValue(path) {
+    var parsedPath = pathSyntax.fromPath(path);
+    var pathIdx = 0;
+    var pathLen = parsedPath.length;
+    while (++pathIdx < pathLen) {
+        if (typeof parsedPath[pathIdx] === "object") {
+            /* eslint-disable no-loop-func */
+            return new ModelResponse(function(o) {
+                o.onError(new Error("Paths must be simple paths"));
+            });
+            /* eslint-enable no-loop-func */
+        }
+    }
+
+    var self = this;
+    return new ModelResponse(function(obs) {
+        return self.get(parsedPath).subscribe(function(data) {
+            var curr = data.json;
+            var depth = -1;
+            var length = parsedPath.length;
+
+            while (curr && ++depth < length) {
+                curr = curr[parsedPath[depth]];
+            }
+            obs.onNext(curr);
+        }, function(err) {
+            obs.onError(err);
+        }, function() {
+            obs.onCompleted();
+        });
+    });
+};
+
+},{"137":137,"65":65}],18:[function(require,module,exports){
+var followReference = require(12);
+var clone = require(26);
+var isExpired = require(28);
+var promote = require(30).promote;
+var $ref = require(119);
+var $atom = require(117);
+var $error = require(118);
 
 module.exports = function getValueSync(model, simplePath, noClone) {
     var root = model._root.cache;
@@ -1360,8 +1334,8 @@ module.exports = function getValueSync(model, simplePath, noClone) {
     };
 };
 
-},{"125":125,"126":126,"127":127,"22":22,"24":24,"27":27,"9":9}],16:[function(require,module,exports){
-var __version = require(45);
+},{"117":117,"118":118,"119":119,"12":12,"26":26,"28":28,"30":30}],19:[function(require,module,exports){
+var __version = require(47);
 
 module.exports = function _getVersion(model, path) {
     // ultra fast clone for boxed values.
@@ -1374,306 +1348,103 @@ module.exports = function _getVersion(model, path) {
     return (version == null) ? -1 : version;
 };
 
-},{"45":45}],17:[function(require,module,exports){
-var followReference = require(9);
-var onError = require(18);
-var onMissing = require(19);
-var onValue = require(20);
-var lru = require(27);
-var hardLink = require(23);
-var isMaterialized = require(25);
-var removeHardlink = hardLink.remove;
-var splice = lru.splice;
-var isExpired = require(24);
-var iterateKeySet = require(168).iterateKeySet;
-var $ref = require(127);
-var $error = require(126);
-var __invalidated = require(33);
-var prefix = require(39);
+},{"47":47}],20:[function(require,module,exports){
+var get = require(13);
+var walkPath = require(32);
 
-function getWalk(model, root, curr, pathOrJSON, depthArg, seedOrFunction, positionalInfoArg, outerResults, optimizedPath, requestedPath, inputFormat, outputFormat, fromReferenceArg) {
-    var depth = depthArg;
-    var fromReference = fromReferenceArg;
-    var positionalInfo = positionalInfoArg;
-    if ((!curr || curr && curr.$type) &&
-        evaluateNode(model, curr, pathOrJSON, depth, seedOrFunction, requestedPath, optimizedPath, positionalInfo, outerResults, outputFormat, fromReference)) {
-        return;
-    }
+var getWithPathsAsPathMap = get(walkPath, false);
+var getWithPathsAsJSONGraph = get(walkPath, true);
 
-    // We continue the search to the end of the path/json structure.
-    else {
+module.exports = {
+    getValueSync: require(18),
+    getBoundValue: require(14),
+    getWithPathsAsPathMap: getWithPathsAsPathMap,
+    getWithPathsAsJSONGraph: getWithPathsAsJSONGraph
+};
 
-        // Base case of the searching:  Have we hit the end of the road?
-        // Paths
-        // 1) depth === path.length
-        // PathMaps (json input)
-        // 2) if its an object with no keys
-        // 3) its a non-object
-        var jsonQuery = inputFormat === "JSON";
-        var atEndOfJSONQuery = false;
-        var keySet, i, len;
-        if (jsonQuery) {
-            // it has a $type property means we have hit a end.
-            if (pathOrJSON && pathOrJSON.$type) {
-                atEndOfJSONQuery = true;
-            }
-
-            else if (pathOrJSON && typeof pathOrJSON === "object") {
-                keySet = Object.keys(pathOrJSON);
-
-                // Parses out all the prefix keys so that later parts
-                // of the algorithm do not have to consider them.
-                var parsedKeys = [];
-                var parsedKeysLength = -1;
-                for (i = 0, len = keySet.length; i < len; ++i) {
-                    if (keySet[i][0] !== prefix && keySet[i][0] !== "$") {
-                        parsedKeys[++parsedKeysLength] = keySet[i];
-                    }
-                }
-                keySet = parsedKeys;
-                if (keySet.length === 1) {
-                    keySet = keySet[0];
-                }
-            }
-
-            // found a primitive, we hit the end.
-            else {
-                atEndOfJSONQuery = true;
-            }
-        } else {
-            keySet = pathOrJSON[depth];
-        }
-
-        // BaseCase: we have hit the end of our query without finding a "leaf" node, therefore emit missing.
-        if (atEndOfJSONQuery || !jsonQuery && depth === pathOrJSON.length) {
-            if (isMaterialized(model)) {
-                onValue(model, curr, seedOrFunction, outerResults, requestedPath, optimizedPath, positionalInfo, outputFormat, fromReference);
-                return;
-            }
-            onMissing(model, curr, pathOrJSON, depth, seedOrFunction, outerResults, requestedPath, optimizedPath, positionalInfo, outputFormat);
-            return;
-        }
-
-        var iteratorNote = {};
-        var permutePosition = positionalInfo;
-        var permuteRequested = requestedPath;
-        var permuteOptimized = optimizedPath;
-        var asJSONG = outputFormat === "JSONG";
-        var asJSON = outputFormat === "JSON";
-        var isKeySet = false;
-        var hasChildren = false;
-        depth++;
-
-        var key = iterateKeySet(keySet, iteratorNote);
-
-        // Checks for empty keyset values.  This happens when the iterator
-        // comes back empty.
-        if (key === void 0 && iteratorNote.done) {
-            return;
-        }
-
-        isKeySet = !iteratorNote.done;
-        if (asJSON && isKeySet) {
-            permutePosition = [];
-            for (i = 0, len = positionalInfo.length; i < len; i++) {
-                permutePosition[i] = positionalInfo[i];
-            }
-            permutePosition.push(depth - 1);
-        }
-
-        do {
-            fromReference = false;
-            if (isKeySet) {
-                permuteOptimized = [];
-                permuteRequested = [];
-                for (i = 0, len = requestedPath.length; i < len; i++) {
-                    permuteRequested[i] = requestedPath[i];
-                }
-                for (i = 0, len = optimizedPath.length; i < len; i++) {
-                    permuteOptimized[i] = optimizedPath[i];
-                }
-            }
-
-            var nextPathOrPathMap = jsonQuery ? pathOrJSON[key] : pathOrJSON;
-            if (jsonQuery && nextPathOrPathMap) {
-                if (typeof nextPathOrPathMap === "object") {
-                    if (nextPathOrPathMap.$type) {
-                        hasChildren = false;
-                    } else {
-                        hasChildren = Object.keys(nextPathOrPathMap).length > 0;
-                    }
-                }
-            }
-
-            var next;
-            if (key === null || jsonQuery && key === "__null") {
-                next = curr;
-            } else {
-                next = curr[key];
-                permuteOptimized.push(key);
-                permuteRequested.push(key);
-            }
-
-            if (next) {
-                var nType = next.$type;
-                var value = nType && next.value || next;
-
-                if (jsonQuery && hasChildren || !jsonQuery && depth < pathOrJSON.length) {
-
-                    if (nType && nType === $ref && !isExpired(next)) {
-                        if (asJSONG) {
-                            onValue(model, next, seedOrFunction, outerResults, false, permuteOptimized, permutePosition, outputFormat);
-                        }
-                        var ref = followReference(model, root, root, next, value, seedOrFunction, outputFormat);
-                        fromReference = true;
-                        next = ref[0];
-                        var refPath = ref[1];
-
-                        permuteOptimized = [];
-                        for (i = 0, len = refPath.length; i < len; i++) {
-                            permuteOptimized[i] = refPath[i];
-                        }
-                    }
-                }
-            }
-            getWalk(model, root, next, nextPathOrPathMap, depth, seedOrFunction, permutePosition, outerResults, permuteOptimized, permuteRequested, inputFormat, outputFormat, fromReference);
-
-            if (!iteratorNote.done) {
-                key = iterateKeySet(keySet, iteratorNote);
-            }
-
-        } while (!iteratorNote.done);
-    }
-}
-
-function evaluateNode(model, curr, pathOrJSON, depth, seedOrFunction, requestedPath, optimizedPath, positionalInfoArg, outerResults, outputFormat, fromReference) {
-    var positionalInfo = positionalInfoArg;
-    // BaseCase: This position does not exist, emit missing.
-    if (!curr) {
-        if (isMaterialized(model)) {
-            onValue(model, curr, seedOrFunction, outerResults, requestedPath, optimizedPath, positionalInfo, outputFormat, fromReference);
-        } else {
-            onMissing(model, curr, pathOrJSON, depth, seedOrFunction, outerResults, requestedPath, optimizedPath, positionalInfo, outputFormat);
-        }
-        return true;
-    }
-
-    var currType = curr.$type;
-
-    positionalInfo = positionalInfo || [];
-
-    // The Base Cases.  There is a type, therefore we have hit a "leaf" node.
-    if (currType === $error) {
-        if (fromReference) {
-            requestedPath.push(null);
-        }
-        if (outputFormat === "JSONG" || model._treatErrorsAsValues) {
-            onValue(model, curr, seedOrFunction, outerResults, requestedPath, optimizedPath, positionalInfo, outputFormat, fromReference);
-        } else {
-            onError(model, curr, requestedPath, optimizedPath, outerResults);
-        }
-    }
-
-    // Else we have found a value, emit the current position information.
-    else if (isExpired(curr)) {
-        if (!curr[__invalidated]) {
-            splice(model, curr);
-            removeHardlink(curr);
-        }
-        onMissing(model, curr, pathOrJSON, depth, seedOrFunction, outerResults, requestedPath, optimizedPath, positionalInfo, outputFormat);
-    } else {
-        onValue(model, curr, seedOrFunction, outerResults, requestedPath, optimizedPath, positionalInfo, outputFormat, fromReference);
-    }
-
-    return true;
-}
-
-module.exports = getWalk;
-
-},{"126":126,"127":127,"168":168,"18":18,"19":19,"20":20,"23":23,"24":24,"25":25,"27":27,"33":33,"39":39,"9":9}],18:[function(require,module,exports){
-var lru = require(27);
-var clone = require(22);
+},{"13":13,"14":14,"18":18,"32":32}],21:[function(require,module,exports){
+var lru = require(30);
+var clone = require(26);
 var promote = lru.promote;
 
-module.exports = function onError(model, node, permuteRequested, permuteOptimized, outerResults) {
+module.exports = function onError(model, node, depth,
+                                  requestedPath, outerResults) {
     var value = node.value;
+    if (!outerResults.errors) {
+        outerResults.errors = [];
+    }
 
     if (model._boxed) {
         value = clone(node);
     }
-    outerResults.errors.push({path: permuteRequested, value: value});
+    outerResults.errors.push({
+        path: requestedPath.slice(0, depth + 1),
+        value: value
+    });
     promote(model, node);
 };
 
-},{"22":22,"27":27}],19:[function(require,module,exports){
-var support = require(29);
-var fastCat = support.fastCat,
-    fastCatSkipNulls = support.fastCatSkipNulls,
-    fastCopy = support.fastCopy;
-var spreadJSON = require(28);
+},{"26":26,"30":30}],22:[function(require,module,exports){
+var support = require(31);
+var fastCopy = support.fastCopy;
 
-module.exports = function onMissing(model, node, path, depth, seedOrFunction, outerResults, permuteRequested, permuteOptimized, permutePosition, outputFormat) {
+module.exports = function onMissing(model, path, depth,
+                                    outerResults, requestedPath,
+                                    optimizedPath, optimizedLength) {
     var pathSlice;
-    if (Array.isArray(path)) {
-        if (depth < path.length) {
-            pathSlice = fastCopy(path, depth);
-        } else {
-            pathSlice = [];
-        }
+    if (!outerResults.requestedMissingPaths) {
+        outerResults.requestedMissingPaths = [];
+        outerResults.optimizedMissingPaths = [];
+    }
 
-        concatAndInsertMissing(pathSlice, outerResults, permuteRequested, permuteOptimized, permutePosition, outputFormat);
+    if (depth < path.length) {
+        pathSlice = fastCopy(path, depth);
     } else {
         pathSlice = [];
-        spreadJSON(path, pathSlice);
-
-        for (var i = 0, len = pathSlice.length; i < len; i++) {
-            concatAndInsertMissing(pathSlice[i], outerResults, permuteRequested, permuteOptimized, permutePosition, outputFormat, true);
-        }
     }
+
+    concatAndInsertMissing(model, pathSlice, depth, requestedPath,
+                           optimizedPath, optimizedLength, outerResults);
 };
 
-function concatAndInsertMissing(remainingPath, results, permuteRequestedArg, permuteOptimized, permutePosition, outputFormat, __null) {
-    var permuteRequested = permuteRequestedArg;
-    var i = 0, len;
-    if (__null) {
-        for (i = 0, len = remainingPath.length; i < len; i++) {
-            if (remainingPath[i] === "__null") {
-                remainingPath[i] = null;
-            }
-        }
-    }
-    if (outputFormat === "JSON") {
-        permuteRequested = fastCat(permuteRequested, remainingPath);
-        for (i = 0, len = permutePosition.length; i < len; i++) {
-            var idx = permutePosition[i];
-            var r = permuteRequested[idx];
-            permuteRequested[idx] = [r];
-        }
-        results.requestedMissingPaths.push(permuteRequested);
-        results.optimizedMissingPaths.push(fastCatSkipNulls(permuteOptimized, remainingPath));
-    } else {
-        results.requestedMissingPaths.push(fastCat(permuteRequested, remainingPath));
-        results.optimizedMissingPaths.push(fastCatSkipNulls(permuteOptimized, remainingPath));
-    }
+function concatAndInsertMissing(model, remainingPath, depth, requestedPath,
+                                optimizedPath, optimizedLength, results) {
+
+    // TODO: Performance.
+    results.requestedMissingPaths.push(
+        requestedPath.
+            slice(0, depth).
+            concat(remainingPath));
+
+    results.optimizedMissingPaths.push(
+        optimizedPath.slice(0, optimizedLength).concat(remainingPath));
 }
 
-},{"28":28,"29":29}],20:[function(require,module,exports){
-var lru = require(27);
-var clone = require(22);
+},{"31":31}],23:[function(require,module,exports){
+var lru = require(30);
+var clone = require(26);
 var promote = lru.promote;
-var $ref = require(127);
-var $atom = require(125);
-var $error = require(126);
-var $modelCreated = require(35);
+var $ref = require(119);
+var $atom = require(117);
+var $error = require(118);
+var $modelCreated = require(38);
 
-module.exports = function onValue(model, node, seedOrFunction, outerResults, permuteRequested, permuteOptimized, permutePosition, outputFormat, fromReference) {
+module.exports = function onValue(model, node, seed, depth, outerResults,
+                                  requestedPath, optimizedPath, optimizedLength,
+                                  isJSONG, fromReference) {
+    // Preload
+    if (!seed) {
+        return;
+    }
+
     var i, len, k, key, curr, prev, prevK;
     var materialized = false, valueNode;
+
     if (node) {
         promote(model, node);
     }
 
-    if (!node || node.value === void 0) {
+    if (!node || node.value === undefined) {
         materialized = model._materialized;
     }
 
@@ -1689,14 +1460,14 @@ module.exports = function onValue(model, node, seedOrFunction, outerResults, per
 
     // JSONG always clones the node.
     else if (node.$type === $ref || node.$type === $error) {
-        if (outputFormat === "JSONG") {
+        if (isJSONG) {
             valueNode = clone(node);
         } else {
             valueNode = node.value;
         }
     }
 
-    else if (outputFormat === "JSONG") {
+    else if (isJSONG) {
         var isObject = node.value && typeof node.value === "object";
         var isUserCreatedNode = !node[$modelCreated];
         if (isObject || isUserCreatedNode) {
@@ -1710,114 +1481,149 @@ module.exports = function onValue(model, node, seedOrFunction, outerResults, per
         valueNode = node.value;
     }
 
-
-    if (permuteRequested) {
-        if (fromReference && permuteRequested[permuteRequested.length - 1] !== null) {
-            permuteRequested.push(null);
-        }
-        outerResults.requestedPaths.push(permuteRequested);
-        outerResults.optimizedPaths.push(permuteOptimized);
+    if (outerResults) {
+        outerResults.hasValue = true;
     }
 
-    switch (outputFormat) {
+    if (isJSONG) {
+        curr = seed.jsonGraph;
+        if (!curr) {
+            curr = seed.jsonGraph = {};
+            seed.paths = [];
+        }
+        for (i = 0, len = optimizedLength - 1; i < len; i++) {
+            key = optimizedPath[i];
 
-        case "Values":
-            // Its difficult to invert this statement, so for now i am going
-            // to leave it as is.  This just prevents onNexts from happening on
-            // undefined nodes
-            if (valueNode === void 0 ||
-                !materialized && !model._boxed && valueNode &&
-                valueNode.$type === $atom && valueNode.value === void 0) {
-                return;
+            if (!curr[key]) {
+                curr[key] = {};
             }
-            seedOrFunction({path: permuteRequested, value: valueNode});
-            break;
+            curr = curr[key];
+        }
 
-        case "PathMap":
-            len = permuteRequested.length - 1;
-            if (len === -1) {
-                seedOrFunction.json = valueNode;
-            } else {
-                curr = seedOrFunction.json;
-                if (!curr) {
-                    curr = seedOrFunction.json = {};
-                }
-                for (i = 0; i < len; i++) {
-                    k = permuteRequested[i];
-                    if (!curr[k]) {
-                        curr[k] = {};
-                    }
-                    prev = curr;
-                    prevK = k;
-                    curr = curr[k];
-                }
-                k = permuteRequested[i];
-                if (k !== null) {
-                    curr[k] = valueNode;
-                } else {
-                    prev[prevK] = valueNode;
-                }
+        // assign the last
+        key = optimizedPath[i];
+
+        // TODO: Special case? do string comparisons make big difference?
+        curr[key] = materialized ? {$type: $atom} : valueNode;
+        if (requestedPath) {
+            seed.paths.push(requestedPath.slice(0, depth));
+        }
+    }
+
+    // The output is pathMap and the depth is 0.  It is just a
+    // value report it as the found JSON
+    else if (depth === 0) {
+        seed.json = valueNode;
+    }
+
+    // The output is pathMap but we need to build the pathMap before
+    // reporting the value.
+    else {
+        curr = seed.json;
+        if (!curr) {
+            curr = seed.json = {};
+        }
+        for (i = 0; i < depth - 1; i++) {
+            k = requestedPath[i];
+            if (!curr[k]) {
+                curr[k] = {};
             }
-            break;
-
-        case "JSON":
-            if (seedOrFunction) {
-                if (permutePosition.length) {
-                    if (!seedOrFunction.json) {
-                        seedOrFunction.json = {};
-                    }
-                    curr = seedOrFunction.json;
-                    for (i = 0, len = permutePosition.length - 1; i < len; i++) {
-                        k = permutePosition[i];
-                        key = permuteRequested[k];
-
-                        if (!curr[key]) {
-                            curr[key] = {};
-                        }
-                        curr = curr[key];
-                    }
-
-                    // assign the last
-                    k = permutePosition[i];
-                    key = permuteRequested[k];
-                    curr[key] = valueNode;
-                } else {
-                    seedOrFunction.json = valueNode;
-                }
-            }
-            break;
-
-        case "JSONG":
-            curr = seedOrFunction.jsonGraph;
-            if (!curr) {
-                curr = seedOrFunction.jsonGraph = {};
-                seedOrFunction.paths = [];
-            }
-            for (i = 0, len = permuteOptimized.length - 1; i < len; i++) {
-                key = permuteOptimized[i];
-
-                if (!curr[key]) {
-                    curr[key] = {};
-                }
-                curr = curr[key];
-            }
-
-            // assign the last
-            key = permuteOptimized[i];
-
-            // TODO: Special case? do string comparisons make big difference?
-            curr[key] = materialized ? {$type: $atom} : valueNode;
-            if (permuteRequested) {
-                seedOrFunction.paths.push(permuteRequested);
-            }
-            break;
-        default:
-            break;
+            prev = curr;
+            prevK = k;
+            curr = curr[k];
+        }
+        k = requestedPath[i];
+        if (k !== null) {
+            curr[k] = valueNode;
+        } else {
+            prev[prevK] = valueNode;
+        }
     }
 };
 
-},{"125":125,"126":126,"127":127,"22":22,"27":27,"35":35}],21:[function(require,module,exports){
-var pathSyntax = require(160);
+},{"117":117,"118":118,"119":119,"26":26,"30":30,"38":38}],24:[function(require,module,exports){
+var isExpired = require(28);
+var hardLink = require(27);
+var lru = require(30);
+var removeHardlink = hardLink.remove;
+var splice = lru.splice;
+var $error = require(118);
+var onError = require(21);
+var onValue = require(23);
+var onMissing = require(22);
+var isMaterialized = require(29);
+var __invalidated = require(36);
+
+/**
+ * When we land on a valueType (or nothing) then we need to report it out to
+ * the outerResults through errors, missing, or values.
+ *
+ * @private
+ */
+module.exports = function onValueType(
+    model, node, path, depth, seed, outerResults,
+    requestedPath, optimizedPath, optimizedLength, isJSONG, fromReference) {
+
+    var currType = node && node.$type;
+    var requiresMaterializedToReport = node && node.value === undefined;
+
+    // There are is nothing here, ether report value, or report the value
+    // that is missing.  If there is no type then report the missing value.
+    if (!node || !currType) {
+        if (isMaterialized(model)) {
+            onValue(model, node, seed, depth, outerResults,
+                    requestedPath, optimizedPath, optimizedLength,
+                    isJSONG, fromReference);
+        } else {
+            onMissing(model, path, depth,
+                      outerResults, requestedPath,
+                      optimizedPath, optimizedLength);
+        }
+        return;
+    }
+
+    // If there are expired value, then report it as missing
+    else if (isExpired(node)) {
+        if (!node[__invalidated]) {
+            splice(model, node);
+            removeHardlink(node);
+        }
+        onMissing(model, path, depth,
+                  outerResults, requestedPath,
+                  optimizedPath, optimizedLength);
+    }
+
+    // If there is an error, then report it as a value if
+    else if (currType === $error) {
+        if (fromReference) {
+            requestedPath[depth] = null;
+        }
+        if (isJSONG || model._treatErrorsAsValues) {
+            onValue(model, node, seed, depth, outerResults, requestedPath,
+                    optimizedPath, optimizedLength, isJSONG, fromReference);
+        } else {
+            onError(model, node, depth, requestedPath, outerResults);
+        }
+    }
+
+    // Report the value
+    else {
+        if (fromReference) {
+            requestedPath[depth] = null;
+        }
+
+        if (!requiresMaterializedToReport ||
+            requiresMaterializedToReport && isMaterialized(model)) {
+
+            onValue(model, node, seed, depth, outerResults, requestedPath,
+                    optimizedPath, optimizedLength, isJSONG, fromReference);
+        }
+    }
+};
+
+
+},{"118":118,"21":21,"22":22,"23":23,"27":27,"28":28,"29":29,"30":30,"36":36}],25:[function(require,module,exports){
+var pathSyntax = require(137);
 
 module.exports = function getValueSync(pathArg) {
     var path = pathSyntax.fromPath(pathArg);
@@ -1830,9 +1636,9 @@ module.exports = function getValueSync(pathArg) {
     return this._syncCheck("getValueSync") && this._getValueSync(this, path).value;
 };
 
-},{"160":160}],22:[function(require,module,exports){
+},{"137":137}],26:[function(require,module,exports){
 // Copies the node
-var prefix = require(39);
+var prefix = require(41);
 
 module.exports = function clone(node) {
     var outValue, i, len;
@@ -1849,11 +1655,11 @@ module.exports = function clone(node) {
 };
 
 
-},{"39":39}],23:[function(require,module,exports){
-var __ref = require(42);
-var __context = require(31);
-var __refIndex = require(41);
-var __refsLength = require(43);
+},{"41":41}],27:[function(require,module,exports){
+var __ref = require(44);
+var __context = require(34);
+var __refIndex = require(43);
+var __refsLength = require(45);
 
 function createHardlink(from, to) {
 
@@ -1889,29 +1695,24 @@ module.exports = {
     remove: removeHardlink
 };
 
-},{"31":31,"41":41,"42":42,"43":43}],24:[function(require,module,exports){
-var now = require(110);
+},{"34":34,"43":43,"44":44,"45":45}],28:[function(require,module,exports){
+var now = require(106);
 module.exports = function isExpired(node) {
     var $expires = node.$expires === void 0 && -1 || node.$expires;
     return $expires !== -1 && $expires !== 1 && ($expires === 0 || $expires < now());
 };
 
-},{"110":110}],25:[function(require,module,exports){
+},{"106":106}],29:[function(require,module,exports){
 module.exports = function isMaterialized(model) {
     return model._materialized && !model._source;
 };
 
-},{}],26:[function(require,module,exports){
-module.exports = function isPathValue(x) {
-    return x.path && x.value;
-};
-
-},{}],27:[function(require,module,exports){
-var __head = require(32);
-var __tail = require(44);
-var __next = require(36);
-var __prev = require(40);
-var __invalidated = require(33);
+},{}],30:[function(require,module,exports){
+var __head = require(35);
+var __tail = require(46);
+var __next = require(39);
+var __prev = require(42);
+var __invalidated = require(36);
 
 // [H] -> Next -> ... -> [T]
 // [T] -> Prev -> ... -> [H]
@@ -1922,24 +1723,8 @@ function lruPromote(model, object) {
         return;
     }
 
-    // First insert
-    if (!head) {
-        root[__head] = object;
-        return;
-    }
-
-    // The head and the tail need to separate
-    if (!root[__tail]) {
-        root[__head] = object;
-        root[__tail] = head;
-        object[__next] = head;
-
-        // Now tail
-        head[__prev] = object;
-        return;
-    }
-
-    // Its in the cache.  Splice out.
+    // The item always exist in the cache since to get anything in the
+    // cache it first must go through set.
     var prev = object[__prev];
     var next = object[__next];
     if (next) {
@@ -1985,33 +1770,7 @@ module.exports = {
     splice: lruSplice
 };
 
-},{"32":32,"33":33,"36":36,"40":40,"44":44}],28:[function(require,module,exports){
-var fastCopy = require(29).fastCopy;
-
-module.exports = function spreadJSON(root, bins, binArg) {
-    var bin = binArg || [];
-    if (!bins.length) {
-        bins.push(bin);
-    }
-    if (!root || typeof root !== "object" || root.$type) {
-        return [];
-    }
-    var keys = Object.keys(root);
-    if (keys.length === 1) {
-        bin.push(keys[0]);
-        spreadJSON(root[keys[0]], bins, bin);
-    } else {
-        for (var i = 0, len = keys.length; i < len; i++) {
-            var k = keys[i];
-            var nextBin = fastCopy(bin);
-            nextBin.push(k);
-            bins.push(nextBin);
-            spreadJSON(root[k], bins, nextBin);
-        }
-    }
-};
-
-},{"29":29}],29:[function(require,module,exports){
+},{"35":35,"36":36,"39":39,"42":42,"46":46}],31:[function(require,module,exports){
 function fastCopy(arr, iArg) {
     var a = [], len, j, i;
     for (j = 0, i = iArg || 0, len = arr.length; i < len; j++, i++) {
@@ -2052,343 +1811,559 @@ module.exports = {
     fastCopy: fastCopy
 };
 
-},{}],30:[function(require,module,exports){
+},{}],32:[function(require,module,exports){
+var followReference = require(12);
+var onValueType = require(24);
+var isExpired = require(28);
+var iterateKeySet = require(146).iterateKeySet;
+var $ref = require(119);
+
+module.exports = function walkPath(model, root, curr, path, depth, seed,
+                                   outerResults, requestedPath,
+                                   optimizedPathArg, optimizedLength, isJSONG,
+                                   fromReferenceArg) {
+
+    var fromReference = fromReferenceArg;
+    var optimizedPath = optimizedPathArg;
+
+    // If there is not a value in the current cache position or its a
+    // value type, then we are at the end of the getWalk.
+    if ((!curr || curr && curr.$type) || depth === path.length) {
+        onValueType(model, curr, path, depth, seed, outerResults,
+                requestedPath, optimizedPath, optimizedLength,
+                isJSONG, fromReference);
+        return;
+    }
+
+    var keySet, i;
+    keySet = path[depth];
+
+    var isKeySet = typeof keySet === "object";
+    var nextDepth = depth + 1;
+    var iteratorNote = false;
+    var key = keySet;
+    if (isKeySet) {
+        iteratorNote = {};
+        key = iterateKeySet(keySet, iteratorNote);
+    }
+
+    // The key can be undefined if there is an empty path.  An example of an
+    // empty path is: [lolomo, [], summary]
+    if (key === undefined && iteratorNote.done) {
+        return;
+    }
+
+    // loop over every key over the keySet
+    var optimizedLengthPlus1 = optimizedLength + 1;
+    do {
+        fromReference = false;
+
+        var next;
+
+        if (key === null) {
+            next = curr;
+        }
+        else {
+            next = curr[key];
+            optimizedPath[optimizedLength] = key;
+            requestedPath[depth] = key;
+        }
+
+        var nextOptimizedPath = optimizedPath;
+        var nextOptimizedLength = optimizedLengthPlus1;
+
+        // If there is the next position we need to consider references.
+        if (next) {
+            var nType = next.$type;
+            var value = nType && next.value || next;
+
+            // If next is a reference follow it.  If we are in JSONG mode,
+            // report that value into the seed without passing the requested
+            // path.  If a requested path is passed to onValueType then it
+            // will add that path to the JSONGraph envelope under `paths`
+            if (nextDepth < path.length && nType &&
+                nType === $ref && !isExpired(next)) {
+                if (isJSONG) {
+                    onValueType(model, next, path, nextDepth, seed,
+                                outerResults, null, optimizedPath,
+                                nextOptimizedLength, isJSONG, fromReference);
+                }
+                var ref = followReference(model, root, root, next,
+                                          value, seed, isJSONG);
+                fromReference = true;
+                next = ref[0];
+                var refPath = ref[1];
+                nextOptimizedPath = [];
+                nextOptimizedLength = refPath.length;
+                for (i = 0; i < nextOptimizedLength; ++i) {
+                    nextOptimizedPath[i] = refPath[i];
+                }
+            }
+        }
+
+        // Recurse to the next level.
+        walkPath(model, root, next, path, nextDepth, seed, outerResults,
+                requestedPath, nextOptimizedPath, nextOptimizedLength,
+                isJSONG, fromReference);
+
+        // If the iteratorNote is not done, get the next key.
+        if (iteratorNote && !iteratorNote.done) {
+            key = iterateKeySet(keySet, iteratorNote);
+        }
+
+    } while (iteratorNote && !iteratorNote.done);
+};
+
+},{"119":119,"12":12,"146":146,"24":24,"28":28}],33:[function(require,module,exports){
 "use strict";
 
 function falcor(opts) {
     return new falcor.Model(opts);
 }
 
-if (typeof Promise !== "undefined" && Promise) {
+if (typeof Promise === "function") {
     falcor.Promise = Promise;
 } else {
-    falcor.Promise = require(173);
+    falcor.Promise = require(153);
 }
 
 module.exports = falcor;
 
 falcor.Model = require(2);
 
-},{"173":173,"2":2}],31:[function(require,module,exports){
-module.exports = require(39) + "context";
+},{"153":153,"2":2}],34:[function(require,module,exports){
+module.exports = require(41) + "context";
 
-},{"39":39}],32:[function(require,module,exports){
-module.exports = require(39) + "head";
+},{"41":41}],35:[function(require,module,exports){
+module.exports = require(41) + "head";
 
-},{"39":39}],33:[function(require,module,exports){
-module.exports = require(39) + "invalidated";
+},{"41":41}],36:[function(require,module,exports){
+module.exports = require(41) + "invalidated";
 
-},{"39":39}],34:[function(require,module,exports){
-module.exports = require(39) + "key";
+},{"41":41}],37:[function(require,module,exports){
+module.exports = require(41) + "key";
 
-},{"39":39}],35:[function(require,module,exports){
+},{"41":41}],38:[function(require,module,exports){
 module.exports = "$modelCreated";
 
-},{}],36:[function(require,module,exports){
-module.exports = require(39) + "next";
+},{}],39:[function(require,module,exports){
+module.exports = require(41) + "next";
 
-},{"39":39}],37:[function(require,module,exports){
-module.exports = require(39) + "offset";
+},{"41":41}],40:[function(require,module,exports){
+module.exports = require(41) + "parent";
 
-},{"39":39}],38:[function(require,module,exports){
-module.exports = require(39) + "parent";
-
-},{"39":39}],39:[function(require,module,exports){
+},{"41":41}],41:[function(require,module,exports){
 /**
  * http://en.wikipedia.org/wiki/Delimiter#ASCIIDelimitedText
  * record separator character.
  */
 module.exports = String.fromCharCode(30);
 
-},{}],40:[function(require,module,exports){
-module.exports = require(39) + "prev";
+},{}],42:[function(require,module,exports){
+module.exports = require(41) + "prev";
 
-},{"39":39}],41:[function(require,module,exports){
-module.exports = require(39) + "ref-index";
+},{"41":41}],43:[function(require,module,exports){
+module.exports = require(41) + "ref-index";
 
-},{"39":39}],42:[function(require,module,exports){
-module.exports = require(39) + "ref";
+},{"41":41}],44:[function(require,module,exports){
+module.exports = require(41) + "ref";
 
-},{"39":39}],43:[function(require,module,exports){
-module.exports = require(39) + "refs-length";
+},{"41":41}],45:[function(require,module,exports){
+module.exports = require(41) + "refs-length";
 
-},{"39":39}],44:[function(require,module,exports){
-module.exports = require(39) + "tail";
+},{"41":41}],46:[function(require,module,exports){
+module.exports = require(41) + "tail";
 
-},{"39":39}],45:[function(require,module,exports){
-module.exports = require(39) + "version";
+},{"41":41}],47:[function(require,module,exports){
+module.exports = require(41) + "version";
 
-},{"39":39}],46:[function(require,module,exports){
-module.exports = invalidateJsonSparseAsJsonDense;
+},{"41":41}],48:[function(require,module,exports){
+var __key = require(37);
+var __ref = require(44);
+var __prefix = require(41);
+var __parent = require(40);
+var __context = require(34);
+var __version = require(47);
+var __refIndex = require(43);
+var __refsLength = require(45);
 
-var clone = require(85);
-var arrayClone = require(80);
-var arraySlice = require(84);
+var $ref = require(119);
 
-var options = require(111);
-var walkPathMap = require(131);
+var getBoundValue = require(14);
 
-var isObject = require(104);
+var promote = require(51);
+var getSize = require(89);
+var hasOwn = require(92);
+var isObject = require(100);
+var isExpired = require(96);
+var isFunction = require(97);
+var isPrimitive = require(102);
+var expireNode = require(87);
+var incrementVersion = require(93);
+var updateNodeAncestors = require(114);
+var removeNodeAndDescendants = require(108);
 
-var getValidKey = require(95);
-var updateGraph = require(122);
-var invalidateNode = require(99);
+/**
+ * Sets a list of PathMaps into a JSON Graph.
+ * @function
+ * @param {Object} model - the Model for which to insert the PathMaps.
+ * @param {Array.<PathMapEnvelope>} pathMapEnvelopes - the a list of @PathMapEnvelopes to set.
+ */
 
-var positions = require(113);
-var _cache = positions.cache;
-var _json = positions.json;
+module.exports = function invalidatePathMaps(model, pathMapEnvelopes) {
 
-function invalidateJsonSparseAsJsonDense(model, pathmaps, values, errorSelector, comparator) {
+    var modelRoot = model._root;
+    var lru = modelRoot;
+    var expired = modelRoot.expired;
+    var version = incrementVersion();
+    var comparator = modelRoot._comparator;
+    var errorSelector = modelRoot._errorSelector;
+    var bound = model._path;
+    var cache = modelRoot.cache;
+    var node = bound.length ? getBoundValue(model, bound).value : cache;
+    var parent = node[__parent] || cache;
+    var initialVersion = cache[__version];
 
-    var roots = options([], model, errorSelector, comparator);
-    var index = -1;
-    var count = pathmaps.length;
-    var nodes = roots.nodes;
-    var parents = arrayClone(nodes);
-    var requested = [];
-    var optimized = arrayClone(roots.bound);
-    var keysStack = [];
-    var json, hasValue, hasValues;
+    var pathMapIndex = -1;
+    var pathMapCount = pathMapEnvelopes.length;
 
-    roots[_cache] = roots.root;
+    while (++pathMapIndex < pathMapCount) {
 
-    while (++index < count) {
+        var pathMapEnvelope = pathMapEnvelopes[pathMapIndex];
 
-        json = values && values[index];
-        if (isObject(json)) {
-            roots.json = roots[_json] = parents[_json] = nodes[_json] = json.json || (json.json = {});
-        } else {
-            roots.json = roots[_json] = parents[_json] = nodes[_json] = void 0;
-        }
+        invalidatePathMap(
+            pathMapEnvelope.json, 0, cache, parent, node,
+            version, expired, lru, comparator, errorSelector
+        );
+    }
 
-        var pathmap = pathmaps[index].json;
-        roots.index = index;
+    var newVersion = cache[__version];
+    var rootChangeHandler = modelRoot.onChange;
 
-        walkPathMap(onNode, onEdge, pathmap, keysStack, 0, roots, parents, nodes, requested, optimized);
+    if (isFunction(rootChangeHandler) && initialVersion !== newVersion) {
+        rootChangeHandler();
+    }
+};
 
-        hasValue = roots.hasValue;
-        if (Boolean(hasValue)) {
-            hasValues = true;
-            if (isObject(json)) {
-                json.json = roots.json;
+function invalidatePathMap(pathMap, depth, root, parent, node, version, expired, lru, comparator, errorSelector) {
+
+    if (isPrimitive(pathMap) || pathMap.$type) {
+        return;
+    }
+
+    for (var key in pathMap) {
+        if (key[0] !== __prefix && key[0] !== "$" && hasOwn(pathMap, key)) {
+            var child = pathMap[key];
+            var branch = isObject(child) && !child.$type;
+            var results = invalidateNode(
+                root, parent, node,
+                key, child, branch, false,
+                version, expired, lru, comparator, errorSelector
+            );
+            var nextNode = results[0];
+            var nextParent = results[1];
+            if (nextNode) {
+                if (branch) {
+                    invalidatePathMap(
+                        child, depth + 1,
+                        root, nextParent, nextNode,
+                        version, expired, lru, comparator, errorSelector
+                    );
+                } else if (removeNodeAndDescendants(nextNode, nextParent, key, lru)) {
+                    updateNodeAncestors(nextParent, getSize(nextNode), lru, version);
+                }
             }
-            delete roots.json;
-            delete roots.hasValue;
-        } else if (isObject(json)) {
-            delete json.json;
+        }
+    }
+}
+
+function invalidateReference(value, root, node, version, expired, lru, comparator, errorSelector) {
+
+    if (isExpired(node)) {
+        expireNode(node, expired, lru);
+        return [undefined, root];
+    }
+
+    promote(lru, node);
+
+    var container = node;
+    var reference = node.value;
+    var parent = root;
+
+    node = node[__context];
+
+    if (node != null) {
+        parent = node[__parent] || root;
+    } else {
+
+        var index = 0;
+        var count = reference.length - 1;
+
+        parent = node = root;
+
+        do {
+            var key = reference[index];
+            var branch = index < count;
+            var results = invalidateNode(
+                root, parent, node,
+                key, value, branch, true,
+                version, expired, lru, comparator, errorSelector
+            );
+            node = results[0];
+            if (isPrimitive(node)) {
+                return results;
+            }
+            parent = results[1];
+        } while (index++ < count);
+
+        if (container[__context] !== node) {
+            var backRefs = node[__refsLength] || 0;
+            node[__refsLength] = backRefs + 1;
+            node[__ref + backRefs] = container;
+            container[__context] = node;
+            container[__refIndex] = backRefs;
         }
     }
 
-    return {
-        values: values,
-        errors: roots.errors,
-        hasValue: hasValues,
-        requestedPaths: roots.requestedPaths,
-        optimizedPaths: roots.optimizedPaths,
-        requestedMissingPaths: roots.requestedMissingPaths,
-        optimizedMissingPaths: roots.optimizedMissingPaths
-    };
+    return [node, parent];
 }
 
-function onNode(pathmap, roots, parents, nodes, requested, optimized, isReference, isBranch, keyArg, keyset, isKeyset) {
+function invalidateNode(
+    root, parent, node,
+    key, value, branch, reference,
+    version, expired, lru, comparator, errorSelector) {
 
-    var key = keyArg;
-    var parent, json;
+    var type = node.$type;
+
+    while (type === $ref) {
+
+        var results = invalidateReference(value, root, node, version, expired, lru, comparator, errorSelector);
+
+        node = results[0];
+
+        if (isPrimitive(node)) {
+            return results;
+        }
+
+        parent = results[1];
+        type = node && node.$type;
+    }
+
+    if (type !== void 0) {
+        return [node, parent];
+    }
 
     if (key == null) {
-        key = getValidKey(optimized);
-        if (key == null) {
-            return;
+        if (branch) {
+            throw new Error("`null` is not allowed in branch key positions.");
+        } else if (node) {
+            key = node[__key];
         }
-        json = parents[_json];
-        parent = parents[_cache];
     } else {
-        json = isKeyset && nodes[_json] || parents[_json];
-        parent = nodes[_cache];
+        parent = node;
+        node = parent[key];
     }
 
-    var node = parent[key];
-
-    if (isReference) {
-        parents[_cache] = parent;
-        nodes[_cache] = node;
-        return;
-    }
-
-    parents[_json] = json;
-
-    if (isBranch) {
-        parents[_cache] = nodes[_cache] = node;
-        if (isKeyset && Boolean(json)) {
-            nodes[_json] = json[keyset] || (json[keyset] = {});
-        }
-        return;
-    }
-
-    nodes[_cache] = node;
-
-    var lru = roots.lru;
-    var size = node.$size || 0;
-    var version = roots.version;
-    invalidateNode(parent, node, key, lru);
-    updateGraph(parent, size, version, lru);
+    return [node, parent];
 }
 
-function onEdge(pathmap, keysStack, depth, roots, parents, nodes, requested, optimized, key, keyset) {
+},{"100":100,"102":102,"108":108,"114":114,"119":119,"14":14,"34":34,"37":37,"40":40,"41":41,"43":43,"44":44,"45":45,"47":47,"51":51,"87":87,"89":89,"92":92,"93":93,"96":96,"97":97}],49:[function(require,module,exports){
+var __key = require(37);
+var __ref = require(44);
+var __parent = require(40);
+var __context = require(34);
+var __version = require(47);
+var __refIndex = require(43);
+var __refsLength = require(45);
 
-    var json;
-    var node = nodes[_cache];
-    var type = isObject(node) && node.$type || (node = void 0);
+var $ref = require(119);
 
-    if (keyset == null) {
-        roots.json = clone(roots, node, type, node && node.value);
+var getBoundValue = require(14);
+
+var promote = require(51);
+var getSize = require(89);
+var isExpired = require(96);
+var isFunction = require(97);
+var isPrimitive = require(102);
+var expireNode = require(87);
+var iterateKeySet = require(146).iterateKeySet;
+var incrementVersion = require(93);
+var updateNodeAncestors = require(114);
+var removeNodeAndDescendants = require(108);
+
+/**
+ * Invalidates a list of Paths in a JSON Graph.
+ * @function
+ * @param {Object} model - the Model for which to insert the PathValues.
+ * @param {Array.<PathValue>} paths - the PathValues to set.
+ */
+
+module.exports = function invalidatePathSets(model, paths) {
+
+    var modelRoot = model._root;
+    var lru = modelRoot;
+    var expired = modelRoot.expired;
+    var version = incrementVersion();
+    var bound = model._path;
+    var cache = modelRoot.cache;
+    var node = bound.length ? getBoundValue(model, bound).value : cache;
+    var parent = node[__parent] || cache;
+    var initialVersion = cache[__version];
+
+    var pathIndex = -1;
+    var pathCount = paths.length;
+
+    while (++pathIndex < pathCount) {
+
+        var path = paths[pathIndex];
+
+        invalidatePathSet(
+            path, 0, cache, parent, node,
+            version, expired, lru
+        );
+    }
+
+    var newVersion = cache[__version];
+    var rootChangeHandler = modelRoot.onChange;
+
+    if (isFunction(rootChangeHandler) && initialVersion !== newVersion) {
+        rootChangeHandler();
+    }
+};
+
+function invalidatePathSet(
+    path, depth, root, parent, node,
+    version, expired, lru) {
+
+    var note = {};
+    var branch = depth < path.length - 1;
+    var keySet = path[depth];
+    var key = iterateKeySet(keySet, note);
+
+    do {
+        var results = invalidateNode(
+            root, parent, node,
+            key, branch, false,
+            version, expired, lru
+        );
+        var nextNode = results[0];
+        var nextParent = results[1];
+        if (nextNode) {
+            if (branch) {
+                invalidatePathSet(
+                    path, depth + 1,
+                    root, nextParent, nextNode,
+                    version, expired, lru
+                );
+            } else if (removeNodeAndDescendants(nextNode, nextParent, key, lru)) {
+                updateNodeAncestors(nextParent, getSize(nextNode), lru, version);
+            }
+        }
+        key = iterateKeySet(keySet, note);
+    } while (!note.done);
+}
+
+function invalidateReference(root, node, version, expired, lru) {
+
+    if (isExpired(node)) {
+        expireNode(node, expired, lru);
+        return [undefined, root];
+    }
+
+    promote(lru, node);
+
+    var container = node;
+    var reference = node.value;
+    var parent = root;
+
+    node = node[__context];
+
+    if (node != null) {
+        parent = node[__parent] || root;
     } else {
-        json = parents[_json];
-        if (Boolean(json)) {
-            json[keyset] = clone(roots, node, type, node && node.value);
+
+        var index = 0;
+        var count = reference.length - 1;
+
+        parent = node = root;
+
+        do {
+            var key = reference[index];
+            var branch = index < count;
+            var results = invalidateNode(
+                root, parent, node,
+                key, branch, true,
+                version, expired, lru
+            );
+            node = results[0];
+            if (isPrimitive(node)) {
+                return results;
+            }
+            parent = results[1];
+        } while (index++ < count);
+
+        if (container[__context] !== node) {
+            var backRefs = node[__refsLength] || 0;
+            node[__refsLength] = backRefs + 1;
+            node[__ref + backRefs] = container;
+            container[__context] = node;
+            container[__refIndex] = backRefs;
         }
     }
-    roots.hasValue = true;
-    roots.requestedPaths.push(arraySlice(requested, roots.offset));
+
+    return [node, parent];
 }
 
-},{"104":104,"111":111,"113":113,"122":122,"131":131,"80":80,"84":84,"85":85,"95":95,"99":99}],47:[function(require,module,exports){
-module.exports = invalidatePathSetsAsJsonDense;
+function invalidateNode(
+    root, parent, node,
+    key, branch, reference,
+    version, expired, lru) {
 
-var clone = require(85);
-var arrayClone = require(80);
-var arraySlice = require(84);
+    var type = node.$type;
 
-var options = require(111);
-var walkPathSet = require(133);
+    while (type === $ref) {
 
-var isObject = require(104);
+        var results = invalidateReference(root, node, version, expired, lru);
 
-var getValidKey = require(95);
-var updateGraph = require(122);
-var invalidateNode = require(99);
+        node = results[0];
 
-var positions = require(113);
-var _cache = positions.cache;
-var _json = positions.json;
-
-function invalidatePathSetsAsJsonDense(model, pathsets, values) {
-
-    var roots = options([], model);
-    var index = -1;
-    var count = pathsets.length;
-    var nodes = roots.nodes;
-    var parents = arrayClone(nodes);
-    var requested = [];
-    var optimized = [];
-    var json;
-
-    roots[_cache] = roots.root;
-
-    while (++index < count) {
-
-        json = values && values[index];
-        if (isObject(json)) {
-            roots[_json] = parents[_json] = nodes[_json] = json.json || (json.json = {});
-        } else {
-            roots[_json] = parents[_json] = nodes[_json] = void 0;
+        if (isPrimitive(node)) {
+            return results;
         }
 
-        var pathset = pathsets[index];
-        roots.index = index;
-
-        walkPathSet(onNode, onEdge, pathset, 0, roots, parents, nodes, requested, optimized);
-
-        if (isObject(json)) {
-            json.json = roots.json;
-        }
-        delete roots.json;
+        parent = results[1];
+        type = node.$type;
     }
 
-    return {
-        values: values,
-        errors: roots.errors,
-        hasValue: true,
-        requestedPaths: roots.requestedPaths,
-        optimizedPaths: roots.optimizedPaths,
-        requestedMissingPaths: roots.requestedMissingPaths,
-        optimizedMissingPaths: roots.optimizedMissingPaths
-    };
-}
-
-function onNode(pathset, roots, parents, nodes, requested, optimized, isReference, isBranch, keyArg, keyset, isKeyset) {
-
-    var key = keyArg;
-    var parent, json;
+    if (type !== void 0) {
+        return [node, parent];
+    }
 
     if (key == null) {
-        key = getValidKey(optimized);
-        if (key == null) {
-            return;
+        if (branch) {
+            throw new Error("`null` is not allowed in branch key positions.");
+        } else if (node) {
+            key = node[__key];
         }
-        json = parents[_json];
-        parent = parents[_cache];
     } else {
-        json = isKeyset && nodes[_json] || parents[_json];
-        parent = nodes[_cache];
+        parent = node;
+        node = parent[key];
     }
 
-    var node = parent[key];
-
-    if (isReference) {
-        parents[_cache] = parent;
-        nodes[_cache] = node;
-        return;
-    }
-
-    parents[_json] = json;
-
-    if (isBranch) {
-        parents[_cache] = nodes[_cache] = node;
-        if (isKeyset && Boolean(json)) {
-            nodes[_json] = json[keyset] || (json[keyset] = {});
-        }
-        return;
-    }
-
-    nodes[_cache] = node;
-
-    var lru = roots.lru;
-    var size = node.$size || 0;
-    var version = roots.version;
-    invalidateNode(parent, node, key, roots.lru);
-    updateGraph(parent, size, version, lru);
+    return [node, parent];
 }
 
-function onEdge(pathset, depth, roots, parents, nodes, requested, optimized, key, keyset) {
+},{"102":102,"108":108,"114":114,"119":119,"14":14,"146":146,"34":34,"37":37,"40":40,"43":43,"44":44,"45":45,"47":47,"51":51,"87":87,"89":89,"93":93,"96":96,"97":97}],50:[function(require,module,exports){
+var __key = require(37);
+var __parent = require(40);
 
-    var json;
-    var node = nodes[_cache];
-    var type = isObject(node) && node.$type || (node = void 0);
+var __head = require(35);
+var __tail = require(46);
+var __next = require(39);
+var __prev = require(42);
 
-    if (keyset == null) {
-        roots.json = clone(roots, node, type, node && node.value);
-    } else {
-        json = parents[_json];
-        if (Boolean(json)) {
-            json[keyset] = clone(roots, node, type, node && node.value);
-        }
-    }
-    roots.hasValue = true;
-    roots.requestedPaths.push(arraySlice(requested, roots.offset));
-}
-
-},{"104":104,"111":111,"113":113,"122":122,"133":133,"80":80,"84":84,"85":85,"95":95,"99":99}],48:[function(require,module,exports){
-var __key = require(34);
-var __parent = require(38);
-
-var __head = require(32);
-var __tail = require(44);
-var __next = require(36);
-var __prev = require(40);
-
-var removeNode = require(114);
-var updateGraph = require(122);
+var removeNode = require(107);
+var updateNodeAncestors = require(114);
 
 module.exports = function collect(lru, expired, totalArg, max, ratioArg, version) {
 
@@ -2409,9 +2384,9 @@ module.exports = function collect(lru, expired, totalArg, max, ratioArg, version
         size = node.$size || 0;
         total -= size;
         if (shouldUpdate === true) {
-            updateGraph(node, size, version, lru);
+            updateNodeAncestors(node, size, lru, version);
         } else if (parent = node[__parent]) {
-            removeNode(parent, node, node[__key], lru);
+            removeNode(node, parent, node[__key], lru);
         }
         node = expired.pop();
     }
@@ -2424,7 +2399,7 @@ module.exports = function collect(lru, expired, totalArg, max, ratioArg, version
             size = node.$size || 0;
             total -= size;
             if (shouldUpdate === true) {
-                updateGraph(node, size, version, lru);
+                updateNodeAncestors(node, size, lru, version);
             }
             node = prev;
         }
@@ -2438,14 +2413,14 @@ module.exports = function collect(lru, expired, totalArg, max, ratioArg, version
     }
 };
 
-},{"114":114,"122":122,"32":32,"34":34,"36":36,"38":38,"40":40,"44":44}],49:[function(require,module,exports){
-var $expiresNever = require(128);
-var __head = require(32);
-var __tail = require(44);
-var __next = require(36);
-var __prev = require(40);
+},{"107":107,"114":114,"35":35,"37":37,"39":39,"40":40,"42":42,"46":46}],51:[function(require,module,exports){
+var $expiresNever = require(120);
+var __head = require(35);
+var __tail = require(46);
+var __next = require(39);
+var __prev = require(42);
 
-var isObject = require(104);
+var isObject = require(100);
 
 module.exports = function lruPromote(root, node) {
 
@@ -2484,11 +2459,11 @@ module.exports = function lruPromote(root, node) {
     return node;
 };
 
-},{"104":104,"128":128,"32":32,"36":36,"40":40,"44":44}],50:[function(require,module,exports){
-var __head = require(32);
-var __tail = require(44);
-var __next = require(36);
-var __prev = require(40);
+},{"100":100,"120":120,"35":35,"39":39,"42":42,"46":46}],52:[function(require,module,exports){
+var __head = require(35);
+var __tail = require(46);
+var __next = require(39);
+var __prev = require(42);
 
 module.exports = function lruSplice(root, node) {
 
@@ -2517,113 +2492,160 @@ module.exports = function lruSplice(root, node) {
     head = tail = next = prev = void 0;
 };
 
-},{"32":32,"36":36,"40":40,"44":44}],51:[function(require,module,exports){
-var Rx = require(182) && require(181);
-var Observable = Rx.Observable;
-var immediateScheduler = Rx.Scheduler.immediate;
+},{"35":35,"39":39,"42":42,"46":46}],53:[function(require,module,exports){
+var complement = require(60);
+var flushGetRequest = require(61);
+var REQUEST_ID = 0;
+var GetRequestType = require(58).GetRequest;
+var setJSONGraphs = require(77);
+var setPathValues = require(79);
+var $error = require(118);
+var emptyArray = [];
 
-var Request = require(53);
+/**
+ * Creates a new GetRequest.  This GetRequest takes a scheduler and
+ * the request queue.  Once the scheduler fires, all batched requests
+ * will be sent to the server.  Upon request completion, the data is
+ * merged back into the cache and all callbacks are notified.
+ *
+ * @param {Scheduler} scheduler -
+ * @param {RequestQueueV2} requestQueue -
+ */
+var GetRequestV2 = function(scheduler, requestQueue) {
+    this.sent = false;
+    this.scheduled = false;
+    this.requestQueue = requestQueue;
+    this.id = ++REQUEST_ID;
+    this.type = GetRequestType;
 
-function BatchedRequest() {
-    Request.call(this);
-}
+    this._scheduler = scheduler;
+    this._pathMap = {};
+    this._optimizedPaths = [];
+    this._requestedPaths = [];
+    this._callbacks = [];
+    this._count = 0;
+    this._disposable = null;
+    this._collapsed = null;
+    this._disposed = false;
+};
 
-BatchedRequest.create = Request.create;
+GetRequestV2.prototype = {
+    /**
+     * batches the paths that are passed in.  Once the request is complete,
+     * all callbacks will be called and the request will be removed from
+     * parent queue.
+     * @param {Array} requestedPaths -
+     * @param {Array} optimizedPaths -
+     * @param {Function} callback -
+     */
+    batch: function(requestedPaths, optimizedPaths, callback) {
+        var self = this;
+        var oPaths = self._optimizedPaths;
+        var rPaths = self._requestedPaths;
+        var callbacks = self._callbacks;
+        var idx = oPaths.length;
 
-BatchedRequest.prototype = Object.create(Request.prototype);
-BatchedRequest.prototype.constructor = BatchedRequest;
+        // If its not sent, simply add it to the requested paths
+        // and callbacks.
+        oPaths[idx] = optimizedPaths;
+        rPaths[idx] = requestedPaths;
+        callbacks[idx] = callback;
+        ++self._count;
 
-BatchedRequest.prototype.getSourceObservable = function getSourceObservable() {
+        // If it has not been scheduled, then schedule the action
+        if (!self.scheduled) {
+            self.scheduled = true;
 
-    if (this.refCountedObservable) {
-        return this.refCountedObservable;
-    }
+            self._disposable = self._scheduler.schedule(function() {
+                flushGetRequest(self, oPaths, function(err, data) {
+                    self.requestQueue.removeRequest(self);
+                    self._disposed = true;
 
-    var count = 0;
-    var source = this;
-    var subject = new Rx.ReplaySubject(null, null, immediateScheduler);
-    var connection = null;
-    var refCountedObservable = Observable.create(function subscribe(observer) {
-        if (++count === 1 && !connection) {
-            connection = source.subscribe(subject);
+                    // If there is at least one callback remaining, then
+                    // callback the callbacks.
+                    if (self._count) {
+                        self._merge(rPaths, err, data);
+
+                        // Call the callbacks.  The first one inserts all the
+                        // data so that the rest do not have consider if their
+                        // data is present or not.
+                        for (var i = 0, len = callbacks.length; i < len; ++i) {
+                            var fn = callbacks[i];
+                            if (fn) {
+                                fn(err, data);
+                            }
+                        }
+                    }
+                });
+            });
         }
-        var subscription = subject.subscribe(observer);
-        return function dispose() {
-            subscription.dispose();
-            if (--count === 0) {
-                connection.dispose();
-            }
-        };
-    });
 
-    this.refCountedObservable = refCountedObservable;
+        // Disposes this batched request.  This does not mean that the
+        // entire request has been disposed, but just the local one, if all
+        // requests are disposed, then the outer disposable will be removed.
+        return createDisposable(self, idx);
+    },
 
-    return refCountedObservable;
-};
+    /**
+     * Attempts to add paths to the outgoing request.  If there are added
+     * paths then the request callback will be added to the callback list.
+     *
+     * @returns {Array} - the remaining paths in the request.
+     */
+    add: function(requested, optimized, callback) {
+        // uses the length tree complement calculator.
+        var self = this;
+        var complementTuple = complement(requested, optimized, self._pathMap);
+        var optimizedComplement;
+        var requestedComplement;
 
-module.exports = BatchedRequest;
+        if (complementTuple) {
+            requestedComplement = complementTuple[2];
+            optimizedComplement = complementTuple[1];
+        } else {
+            requestedComplement = requested;
+            optimizedComplement = optimized;
+        }
 
-},{"181":181,"182":182,"53":53}],52:[function(require,module,exports){
-var Rx = require(182);
-var Observer = Rx.Observer;
+        var inserted = false;
+        var disposable = false;
 
-var BatchedRequest = require(51);
+        // If the out paths is less than the passed in paths, then there
+        // has been an intersection and the complement has been returned.
+        // Therefore, this can be deduped across requests.
+        if (optimizedComplement.length < optimized.length) {
+            inserted = true;
+            var idx = self._callbacks.length;
+            self._callbacks[idx] = callback;
+            self._requestedPaths[idx] = complementTuple[0];
+            self._optimizedPaths[idx] = [];
+            ++self._count;
 
-var falcorPathUtils = require(168);
-var toPaths = falcorPathUtils.toPaths;
-var arrayMap = require(83);
+            disposable = createDisposable(self, idx);
+        }
 
-var setJsonGraphAsJsonDense = require(66);
-var setJsonValuesAsJsonDense = require(74);
+        return [inserted, requestedComplement, optimizedComplement, disposable];
+    },
 
-var emptyArray = new Array(0);
-var $error = require(126);
+    /**
+     * merges the response into the model"s cache.
+     */
+    _merge: function(requested, err, data) {
+        var self = this;
+        var model = self.requestQueue.model;
+        var modelRoot = model._root;
+        var errorSelector = modelRoot.errorSelector;
+        var comparator = modelRoot.comparator;
+        var boundPath = model._path;
 
-function GetRequest() {
-    BatchedRequest.call(this);
-}
+        model._path = emptyArray;
 
-GetRequest.create = BatchedRequest.create;
+        // flatten all the requested paths, adds them to the
+        var nextPaths = flattenRequestedPaths(requested);
 
-GetRequest.prototype = Object.create(BatchedRequest.prototype);
-GetRequest.prototype.constructor = GetRequest;
-
-GetRequest.prototype.method = "get";
-
-GetRequest.prototype.getSourceArgs = function getSourceArgs() {
-    this.paths = toPaths(this.pathmaps);
-    return this.paths;
-};
-
-GetRequest.prototype.getSourceObserver = function getSourceObserver(observer) {
-
-    var model = this.model;
-    var bound = model._path;
-    var paths = this.paths;
-    var modelRoot = model._root;
-    var errorSelector = modelRoot.errorSelector;
-    var comparator = modelRoot.comparator;
-
-    return BatchedRequest.prototype.getSourceObserver.call(this, Observer.create(
-        function onNext(jsonGraphEnvelope) {
-
-            model._path = emptyArray;
-
-            var result = setJsonGraphAsJsonDense(model, [{
-                paths: paths,
-                jsonGraph: jsonGraphEnvelope.jsonGraph
-            }], emptyArray, errorSelector, comparator);
-
-            jsonGraphEnvelope.paths = result.requestedPaths.concat(result.errors.map(getPath));
-
-            model._path = bound;
-
-            observer.onNext(jsonGraphEnvelope);
-        },
-        function onError(errorArg) {
-
-            var error = errorArg;
-            model._path = emptyArray;
+        // Insert errors in every requested position.
+        if (err) {
+            var error = err;
 
             // Converts errors to objects, a more friendly storage
             // of errors.
@@ -2641,39 +2663,76 @@ GetRequest.prototype.getSourceObserver = function getSourceObserver(observer) {
                 };
             }
 
-            setJsonValuesAsJsonDense(model, arrayMap(paths, function(path) {
+            var pathValues = nextPaths.map(function(x) {
                 return {
-                    path: path,
+                    path: x,
                     value: error
                 };
-            }), emptyArray, errorSelector, comparator);
-
-            model._path = bound;
-
-            observer.onError(error);
-        },
-        function onCompleted() {
-            observer.onCompleted();
+            });
+            setPathValues(model, pathValues, null, errorSelector, comparator);
         }
-    ));
+
+        // Insert the jsonGraph from the dataSource.
+        else {
+            setJSONGraphs(model, [{
+                paths: nextPaths,
+                jsonGraph: data.jsonGraph
+            }], null, errorSelector, comparator);
+        }
+
+        // return the model"s boundPath
+        model._path = boundPath;
+    }
 };
 
-function getPath(pv) {
-    return pv.path;
+// Creates a more efficient closure of the things that are
+// needed.  So the request and the idx.  Also prevents code
+// duplication.
+function createDisposable(request, idx) {
+    var disposed = false;
+    return function() {
+        if (disposed || request._disposed) {
+            return;
+        }
+
+        disposed = true;
+        request._callbacks[idx] = null;
+        request._optimizedPaths[idx] = [];
+        request._requestedPaths[idx] = [];
+
+        // If there are no more requests, then dispose all of the request.
+        var count = --request._count;
+        if (count === 0 && !request.sent) {
+            request._disposable.dispose();
+            request.requestQueue.removeRequest(request);
+        }
+    };
 }
 
-module.exports = GetRequest;
+function flattenRequestedPaths(requested) {
+    var out = [];
+    var outLen = -1;
+    for (var i = 0, len = requested.length; i < len; ++i) {
+        var paths = requested[i];
+        for (var j = 0, innerLen = paths.length; j < innerLen; ++j) {
+            out[++outLen] = paths[j];
+        }
+    }
+    return out;
+}
 
-},{"126":126,"168":168,"182":182,"51":51,"66":66,"74":74,"83":83}],53:[function(require,module,exports){
-var Rx = require(182);
+module.exports = GetRequestV2;
+
+},{"118":118,"58":58,"60":60,"61":61,"77":77,"79":79}],54:[function(require,module,exports){
+var Rx = require(161);
 var Observer = Rx.Observer;
 var Observable = Rx.Observable;
 var Disposable = Rx.Disposable;
 var SerialDisposable = Rx.SerialDisposable;
 var CompositeDisposable = Rx.CompositeDisposable;
-var InvalidSourceError = require(8);
+var InvalidSourceError = require(9);
 
-var falcorPathUtils = require(168);
+var falcorPathUtils = require(146);
 var iterateKeySet = falcorPathUtils.iterateKeySet;
 
 function Request() {
@@ -2840,18 +2899,14 @@ Request.prototype._subscribe = function _subscribe(observer) {
 
 module.exports = Request;
 
-},{"168":168,"182":182,"8":8}],54:[function(require,module,exports){
-var Rx = require(182) && require(180);
-var Observable = Rx.Observable;
+},{"146":146,"161":161,"9":9}],55:[function(require,module,exports){
 
-var GetRequest = require(52);
-var SetRequest = require(55);
+var SetRequest = require(59);
 
-var prefix = require(39);
-var getType = require(94);
-var isObject = require(104);
-var arrayClone = require(80);
-var falcorPathUtils = require(168);
+var prefix = require(41);
+var getType = require(91);
+var isObject = require(100);
+var falcorPathUtils = require(146);
 
 /* eslint-disable no-labels block-scoped-var */
 function RequestQueue(model, scheduler) {
@@ -2860,62 +2915,6 @@ function RequestQueue(model, scheduler) {
     this.requests = [];
     this.scheduler = scheduler;
 }
-
-RequestQueue.prototype.get = function getRequest(paths) {
-
-    var self = this;
-
-    return Observable.defer(function() {
-
-        var requests = self.distributePaths(paths, self.requests, GetRequest);
-
-        return (Observable.defer(function() {
-                return Observable.fromArray(requests.map(function(request) {
-                    return request.getSourceObservable();
-                }));
-            })
-            .mergeAll()
-            .reduce(self.mergeJSONGraphs, {
-                index: -1,
-                jsonGraph: {}
-            })
-            .map(function(response) {
-                return {
-                    paths: paths,
-                    index: response.index,
-                    jsonGraph: response.jsonGraph
-                };
-            })
-            .subscribeOn(self.scheduler).finally(function() {
-                var paths2 = arrayClone(paths);
-                var pathCount = paths2.length;
-                var requestIndex = -1;
-                var requestCount = requests.length;
-                while (pathCount > 0 && requestCount > 0 && ++requestIndex < requestCount) {
-                    var request = requests[requestIndex];
-                    if (request.pending) {
-                        continue;
-                    }
-                    var pathIndex = -1;
-                    while (++pathIndex < pathCount) {
-                        var path = paths2[pathIndex];
-                        if (request.removePath(path)) {
-                            paths2.splice(pathIndex--, 1);
-                            if (--pathCount === 0) {
-                                break;
-                            }
-                        }
-                    }
-                    if (request.length === 0) {
-                        requests.splice(requestIndex--, 1);
-                        if (--requestCount === 0) {
-                            break;
-                        }
-                    }
-                }
-            }));
-    });
-};
 
 RequestQueue.prototype.set = function setRequest(jsonGraphEnvelope) {
     jsonGraphEnvelope.paths = falcorPathUtils.collapse(jsonGraphEnvelope.paths);
@@ -3035,16 +3034,179 @@ RequestQueue.prototype.mergeJSONGraphs = function mergeJSONGraphs(aggregate, res
 
 module.exports = RequestQueue;
 
-},{"104":104,"168":168,"180":180,"182":182,"39":39,"52":52,"55":55,"80":80,"94":94}],55:[function(require,module,exports){
-var Rx = require(182);
+},{"100":100,"146":146,"41":41,"59":59,"91":91}],56:[function(require,module,exports){
+var RequestQueue = require(55);
+var RequestQueueV2 = require(57);
+
+function RequestQueueRx(model, scheduler) {
+    this.model = model;
+    this.scheduler = scheduler;
+    this.requests = this._requests = [];
+}
+
+// RX MONKEY PATCH
+RequestQueueRx.prototype.get = RequestQueueV2.prototype.get;
+RequestQueueRx.prototype.removeRequest = RequestQueueV2.prototype.removeRequest;
+
+RequestQueueRx.prototype.set = RequestQueue.prototype.set;
+RequestQueueRx.prototype.call = RequestQueue.prototype.call;
+
+module.exports = RequestQueueRx;
+
+},{"55":55,"57":57}],57:[function(require,module,exports){
+var RequestTypes = require(58);
+var GetRequest = require(53);
+
+/**
+ * The request queue is responsible for queuing the operations to
+ * the model"s dataSource.
+ *
+ * @param {Model} model -
+ * @param {Scheduler} scheduler -
+ */
+function RequestQueueV2(model, scheduler) {
+    this.model = model;
+    this.scheduler = scheduler;
+    this.requests = this._requests = [];
+}
+
+RequestQueueV2.prototype = {
+    /**
+     * Sets the scheduler, but will not affect any current requests.
+     */
+    setScheduler: function(scheduler) {
+        this.scheduler = scheduler;
+    },
+
+    /**
+     * Creates a get request to the dataSource.  Depending on the current
+     * scheduler is how the getRequest will be flushed.
+     * @param {Array} requestedPaths -
+     * @param {Array} optimizedPaths -
+     * @param {Function} cb -
+     */
+    get: function(requestedPaths, optimizedPaths, cb) {
+        var self = this;
+        var disposables = [];
+        var count = 0;
+        var requests = self._requests;
+        var i, len;
+        var oRemainingPaths = optimizedPaths;
+        var rRemainingPaths = requestedPaths;
+        var disposed = false;
+        var request;
+
+        for (i = 0, len = requests.length; i < len; ++i) {
+            request = requests[i];
+            if (request.type !== RequestTypes.GetRequest) {
+                continue;
+            }
+
+            // The request has been sent, attempt to jump on the request
+            // if possible.
+            if (request.sent) {
+                var results = request.add(
+                    rRemainingPaths, oRemainingPaths, refCountCallback);
+
+                // Checks to see if the results were successfully inserted
+                // into the outgoing results.  Then our paths will be reduced
+                // to the complement.
+                if (results[0]) {
+                    rRemainingPaths = results[1];
+                    oRemainingPaths = results[2];
+                    disposables[disposables.length] = results[3];
+                    ++count;
+                }
+            }
+
+            // If there is a non sent request, then we can batch and leave.
+            else {
+                request.batch(
+                    rRemainingPaths, oRemainingPaths, refCountCallback);
+                oRemainingPaths = [];
+                rRemainingPaths = [];
+                ++count;
+            }
+
+            // If there are no more remaining paths then exit the loop.
+            if (!oRemainingPaths.length) {
+                break;
+            }
+        }
+
+        // After going through all the available requests if there are more
+        // paths to process then a new request must be made.
+        if (oRemainingPaths.length) {
+            request = new GetRequest(self.scheduler, self);
+            requests[requests.length] = request;
+            ++count;
+            var disposable = request.batch(
+                rRemainingPaths, oRemainingPaths, refCountCallback);
+            disposables[disposables.length] = disposable;
+        }
+
+        // This is a simple refCount callback.
+        function refCountCallback() {
+            if (disposed) {
+                return;
+            }
+
+            --count;
+
+            // If the count becomes 0, then its time to notify the
+            // listener that the request is done.
+            if (count === 0) {
+                cb();
+            }
+        }
+
+        // When disposing the request all of the outbound requests will be
+        // disposed of.
+        return function() {
+            if (disposed || count === 0) {
+                return;
+            }
+
+            disposed = true;
+            var length = disposables.length;
+            for (var idx = 0; idx < length; ++idx) {
+                disposables[idx]();
+            }
+        };
+    },
+
+    /**
+     * Removes the request from the request
+     */
+    removeRequest: function(request) {
+        var requests = this._requests;
+        var i = requests.length;
+        while (--i >= 0) {
+            if (requests[i].id === request.id) {
+                requests.splice(i, 1);
+                break;
+            }
+        }
+    }
+};
+
+module.exports = RequestQueueV2;
+
+},{"53":53,"58":58}],58:[function(require,module,exports){
+module.exports = {
+    GetRequest: "GET"
+};
+
+},{}],59:[function(require,module,exports){
+var Rx = require(161);
 var Observer = Rx.Observer;
 
-var Request = require(53);
+var Request = require(54);
 
-var arrayMap = require(83);
+var arrayMap = require(84);
 
-var setJsonGraphAsJsonDense = require(66);
-var setJsonValuesAsJsonDense = require(74);
+var setJSONGraphs = require(77);
+var setPathValues = require(79);
 
 var emptyArray = new Array(0);
 
@@ -3088,12 +3250,12 @@ SetRequest.prototype.getSourceObserver = function getSourceObserver(observer) {
 
             model._path = emptyArray;
 
-            var result = setJsonGraphAsJsonDense(model._materialize(), [{
+            var successfulPaths = setJSONGraphs(model, [{
                 paths: paths,
                 jsonGraph: jsonGraphEnvelope.jsonGraph
-            }], emptyArray, errorSelector, comparator);
+            }], null, errorSelector, comparator);
 
-            jsonGraphEnvelope.paths = result.requestedPaths.concat(result.errors.map(getPath));
+            jsonGraphEnvelope.paths = successfulPaths[1];
 
             model._path = bound;
 
@@ -3103,12 +3265,12 @@ SetRequest.prototype.getSourceObserver = function getSourceObserver(observer) {
 
             model._path = emptyArray;
 
-            setJsonValuesAsJsonDense(model._materialize(), arrayMap(paths, function(path) {
+            setPathValues(model, arrayMap(paths, function(path) {
                 return {
                     path: path,
                     value: error
                 };
-            }), emptyArray, errorSelector, comparator);
+            }), null, errorSelector, comparator);
 
             model._path = bound;
 
@@ -3120,23 +3282,152 @@ SetRequest.prototype.getSourceObserver = function getSourceObserver(observer) {
     ));
 };
 
-function getPath(pv) {
-    return pv.path;
-}
-
 module.exports = SetRequest;
 
-},{"182":182,"53":53,"66":66,"74":74,"83":83}],56:[function(require,module,exports){
-var Rx = require(182);
+},{"161":161,"54":54,"77":77,"79":79,"84":84}],60:[function(require,module,exports){
+var hasIntersection = require(146).hasIntersection;
+var arraySlice = require(85);
+
+/**
+ * creates the complement of the requested and optimized paths
+ * based on the provided tree.
+ *
+ * If there is no complement then this is just a glorified
+ * array copy.
+ */
+module.exports = function complement(requested, optimized, tree) {
+    var optimizedComplement = [];
+    var requestedComplement = [];
+    var requestedIntersection = [];
+    var intersectionLength = -1, complementLength = -1;
+    var intersectionFound = false;
+
+    for (var i = 0, len = optimized.length; i < len; ++i) {
+        // If this does not intersect then add it to the output.
+        var path = optimized[i];
+        var subTree = tree[path.length];
+
+        // If there is no subtree to look into or there is no intersection.
+        if (!subTree || !hasIntersection(subTree, path, 0)) {
+
+            if (intersectionFound) {
+                optimizedComplement[++complementLength] = path;
+                requestedComplement[complementLength] = requested[i];
+            }
+        } else {
+            // If there has been no intersection yet and
+            // i is bigger than 0 (meaning we have had only complements)
+            // then we need to update our complements to match the current
+            // reality.
+            if (!intersectionFound && i > 0) {
+                requestedComplement = arraySlice(requested, 0, i);
+                optimizedComplement = arraySlice(optimized, 0, i);
+            }
+
+            requestedIntersection[++intersectionLength] = requested[i];
+            intersectionFound = true;
+        }
+    }
+
+    if (!intersectionFound) {
+        return null;
+    }
+
+    return [requestedIntersection, optimizedComplement, requestedComplement ];
+};
+
+},{"146":146,"85":85}],61:[function(require,module,exports){
+var pathUtils = require(146);
+var toTree = pathUtils.toTree;
+var toPaths = pathUtils.toPaths;
+
+/**
+ * Flushes the current set of requests.  This will send the paths to the
+ * dataSource.  * The results of the dataSource will be sent to callback which
+ * should perform the zip of all callbacks.
+ * @param {GetRequest} request -
+ * @param {Array} listOfPaths -
+ * @param {Function} callback -
+ * @private
+ */
+module.exports = function flushGetRequest(request, listOfPaths, callback) {
+    if (request._count === 0) {
+        request.requestQueue.removeRequest(request);
+        return;
+    }
+
+    request.sent = true;
+    request.scheduled = false;
+
+    // TODO: Move this to the collapse algorithm,
+    // TODO: we should have a collapse that returns the paths and
+    // TODO: the trees.
+
+    // Take all the paths and add them to the pathMap by length.
+    // Since its a list of paths
+    var pathMap = request._pathMap;
+    var listKeys = Object.keys(listOfPaths);
+    var listIdx = 0, listLen = listKeys.length;
+    for (; listIdx < listLen; ++listIdx) {
+        var paths = listOfPaths[listIdx];
+        for (var j = 0, pathLen = paths.length; j < pathLen; ++j) {
+            var pathSet = paths[j];
+            var len = pathSet.length;
+
+            if (!pathMap[len]) {
+                pathMap[len] = [pathSet];
+            } else {
+                var pathSetsByLength = pathMap[len];
+                pathSetsByLength[pathSetsByLength.length] = pathSet;
+            }
+        }
+    }
+
+    // now that we have them all by length, convert each to a tree.
+    var pathMapKeys = Object.keys(pathMap);
+    var pathMapIdx = 0, pathMapLen = pathMapKeys.length;
+    for (; pathMapIdx < pathMapLen; ++pathMapIdx) {
+        var pathMapKey = pathMapKeys[pathMapIdx];
+        pathMap[pathMapKey] = toTree(pathMap[pathMapKey]);
+    }
+
+    // Take the pathMapTree and create the collapsed paths and send those
+    // off to the server.
+    var collapsedPaths = request._collasped = toPaths(pathMap);
+    var jsonGraphData;
+
+    // Make the request.
+    // You are probably wondering why this is not cancellable.  If a request
+    // goes out, and all the requests are removed, the request should not be
+    // cancelled.  The reasoning is that another request could come in, after
+    // all callbacks have been removed and be deduped.  Might as well keep this
+    // around until it comes back.  If at that point there are no requests then
+    // we cancel at the callback above.
+    request.
+        requestQueue.
+        model._source.
+        get(collapsedPaths).
+        subscribe(function(data) {
+            jsonGraphData = data;
+        }, function(err) {
+            callback(err, jsonGraphData);
+        }, function() {
+            callback(null, jsonGraphData);
+        });
+};
+
+
+},{"146":146}],62:[function(require,module,exports){
+var Rx = require(161) && require(160);
 var Observable = Rx.Observable;
 var CompositeDisposable = Rx.CompositeDisposable;
 
-var ModelResponse = require(60);
-var InvalidSourceError = require(8);
+var ModelResponse = require(65);
+var InvalidSourceError = require(9);
 
-var pathSyntax = require(160);
+var pathSyntax = require(137);
 
-var $ref = require(127);
+var $ref = require(119);
 
 function CallResponse(subscribe) {
     Observable.call(this, subscribe || subscribeToResponse);
@@ -3159,11 +3450,16 @@ CallResponse.prototype.initialize = function initializeResponse() {
     return this;
 };
 
+function toObservable(x) {
+    return Rx.Observable.defer(function() {
+        return x;
+    });
+}
+
 function subscribeToResponse(observer) {
 
     var args = this.args;
     var model = this.model;
-    var selector = this.selector;
 
     var callPath = pathSyntax.fromPath(args[0]);
     var callArgs = args[1] || [];
@@ -3178,12 +3474,21 @@ function subscribeToResponse(observer) {
     var boundCallPath = boundPath.concat(callPath);
     var boundThisPath = boundCallPath.slice(0, -1);
 
-    var setCallValuesObs = model
-        .withoutDataSource()
-        ._get(callPath, function(localFn) {
+    var setCallValuesObs = toObservable(
+            model.withoutDataSource().get(callPath)
+        )
+        .map(function(data) {
+            var curr = data.json;
+            var depth = -1;
+            var length = callPath.length;
+
+            while (curr && ++depth < length) {
+                curr = curr[callPath[depth]];
+            }
+            var boundModel = rootModel._derefSync(boundThisPath).boxValues();
             return {
-                model: rootModel._derefSync(boundThisPath).boxValues(),
-                localFn: localFn
+                model: boundModel,
+                localFn: curr
             };
         })
         .flatMap(getLocalCallObs)
@@ -3196,14 +3501,9 @@ function subscribeToResponse(observer) {
     disposables.add(setCallValuesObs.subscribe(function(envelope) {
             var paths = envelope.paths;
             var invalidated = envelope.invalidated;
-            if (selector) {
-                paths.push(function() {
-                    return selector.call(model, paths);
-                });
-            }
             var innerObs = model.get.apply(model, paths);
             if (observer.outputFormat === "AsJSONG") {
-                innerObs = innerObs._toJSONG().doAction(function(envelope2) {
+                innerObs = toObservable(innerObs._toJSONG()).doAction(function(envelope2) {
                     envelope2.invalidated = invalidated;
                 });
             }
@@ -3265,9 +3565,9 @@ function subscribeToResponse(observer) {
         function setLocalValues(results) {
             var values = results.values.concat(results.references);
             if (values.length > 0) {
-                return localRoot.set
-                    .apply(localRoot, values)
-                    ._toJSONG()
+                return toObservable(localRoot.set.
+                        apply(localRoot, values).
+                        _toJSONG())
                     .map(function(envelope) {
                         return {
                             results: results,
@@ -3300,7 +3600,7 @@ function subscribeToResponse(observer) {
             var envelopeObs;
 
             if (rootPaths.length > 0) {
-                envelopeObs = rootModel.get.apply(rootModel, rootValues.concat(rootPaths))._toJSONG();
+                envelopeObs = toObservable(rootModel.get.apply(rootModel, rootValues.concat(rootPaths))._toJSONG());
             } else {
                 envelopeObs = Observable.return(envelope);
             }
@@ -3321,10 +3621,6 @@ function subscribeToResponse(observer) {
         function pluckPath(pathValue) {
             return pathValue.path;
         }
-
-        function prependThisPath(path) {
-            return boundThisPath.concat(path);
-        }
     }
 
     function getRemoteCallObs(dataSource) {
@@ -3333,7 +3629,7 @@ function subscribeToResponse(observer) {
             return Rx.Observable.defer(function() {
                 var obs;
                 try {
-                    obs = dataSource.call(callPath, callArgs, suffixes, extraPaths);
+                    obs = dataSource.call(boundCallPath, callArgs, suffixes, extraPaths);
                 } catch (e) {
                     obs = Observable.throw(new InvalidSourceError(e));
                 }
@@ -3353,11 +3649,8 @@ function subscribeToResponse(observer) {
     }
 
     function setCallEnvelope(envelope) {
-        return localRoot.
-            set(envelope).
-            reduce(function(acc) {
-                return acc;
-            }, {}).
+        return toObservable(localRoot.set(envelope)).
+            reduce(function(acc) { return acc; }, null).
             map(function() {
                 return {
                     invalidated: envelope.invalidated,
@@ -3367,206 +3660,31 @@ function subscribeToResponse(observer) {
                 };
             });
     }
+
+    function prependThisPath(path) {
+        return boundThisPath.concat(path);
+    }
 }
 
 module.exports = CallResponse;
 
-},{"127":127,"160":160,"182":182,"60":60,"8":8}],57:[function(require,module,exports){
-var Rx = require(182);
-var Observable = Rx.Observable;
-var Disposable = Rx.Disposable;
-
-var IdempotentResponse = require(58);
-var InvalidSourceError = require(8);
-
-var arrayMap = require(83);
-var arrayConcat = require(81);
-var isFunction = require(101);
-
-function GetResponse(subscribe) {
-    IdempotentResponse.call(this, subscribe || subscribeToGetResponse);
-}
-
-GetResponse.create = IdempotentResponse.create;
-
-GetResponse.prototype = Object.create(IdempotentResponse.prototype);
-GetResponse.prototype.method = "get";
-GetResponse.prototype.constructor = GetResponse;
-
-GetResponse.prototype.invokeSourceRequest = function invokeSourceRequest(model) {
-
-    var source = this;
-    var caught = this.catch(function getMissingPaths(results) {
-
-        if (results && results.invokeSourceRequest === true) {
-
-            var optimizedMissingPaths = results.optimizedMissingPaths;
-
-            return (model._request.get(optimizedMissingPaths).
-                do(null, function setResponseError() {
-                    source.isCompleted = true;
-                })
-                .materialize()
-                .flatMap(function(notification) {
-                    if (notification.kind === "C") {
-                        return Observable.empty();
-                    }
-                    if (notification.kind === "E") {
-                        var ex = notification.exception;
-                        if (InvalidSourceError.is(ex)) {
-                            return Observable.throw(notification.exception);
-                        }
-                    }
-                    return caught;
-                }));
-        }
-
-        return Observable.throw(results);
-    });
-
-    return new this.constructor(function(observer) {
-        return caught.subscribe(observer);
-    });
-};
-
-// Executes the local cache search for the GetResponse's operation groups.
-function subscribeToGetResponse(observer) {
-
-    if (this.subscribeCount++ >= this.subscribeLimit) {
-        observer.onError("Loop kill switch thrown.");
-        return Disposable.empty;
-    }
-
-    var model = this.model;
-    var modelRoot = model._root;
-    var method = this.method;
-    var boundPath = this.boundPath;
-    var outputFormat = this.outputFormat;
-
-    var isMaster = this.isMaster;
-    var isCompleted = this.isCompleted;
-    var isProgressive = this.isProgressive;
-    var asJSONG = outputFormat === "AsJSONG";
-    var asValues = outputFormat === "AsValues";
-    var hasValue = false;
-
-    var errors = [];
-    var requestedMissingPaths = [];
-    var optimizedMissingPaths = [];
-
-    var groups = this.groups;
-    var groupIndex = -1;
-    var groupCount = groups.length;
-
-    while (++groupIndex < groupCount) {
-
-        var group = groups[groupIndex];
-        var groupValues = !asValues && group.values || onPathValueNext;
-
-        var inputType = group.inputType;
-        var methodArgs = group.arguments;
-
-        if (methodArgs.length > 0) {
-
-            var operationName = "_" + method + inputType + outputFormat;
-            var operationFunc = model[operationName];
-            var results = operationFunc(model, methodArgs, groupValues);
-
-            errors.push.apply(errors, results.errors);
-            requestedMissingPaths.push.apply(requestedMissingPaths, results.requestedMissingPaths);
-            optimizedMissingPaths.push.apply(optimizedMissingPaths, results.optimizedMissingPaths);
-
-            if (asValues) {
-                group.arguments = results.requestedMissingPaths;
-            } else {
-                hasValue = hasValue || results.hasValue || results.requestedPaths.length > 0;
-            }
-        }
-    }
-
-    isCompleted = isCompleted || requestedMissingPaths.length === 0;
-    var hasError = errors.length > 0;
-
-    try {
-        modelRoot.syncRefCount++;
-        if (hasValue && (isProgressive || isCompleted || isMaster)) {
-            var values = this.values;
-            var selector = this.selector;
-            if (isFunction(selector)) {
-                observer.onNext(selector.apply(model, values.map(pluckJSON)));
-            } else {
-                var valueIndex = -1;
-                var valueCount = values.length;
-                while (++valueIndex < valueCount) {
-                    observer.onNext(values[valueIndex]);
-                }
-            }
-        }
-        if (isCompleted || isMaster) {
-            if (hasError) {
-                observer.onError(errors);
-            } else {
-                observer.onCompleted();
-            }
-        } else {
-            if (asJSONG) {
-                this.values[0].paths = [];
-            }
-            observer.onError({
-                method: method,
-                requestedMissingPaths: arrayMap(requestedMissingPaths, prependBoundPath),
-                optimizedMissingPaths: optimizedMissingPaths,
-                invokeSourceRequest: true
-            });
-        }
-    } catch (e) {
-        throw e;
-    } finally {
-        --modelRoot.syncRefCount;
-    }
-
-    return Disposable.empty;
-
-    function prependBoundPath(path) {
-        return arrayConcat(boundPath, path);
-    }
-
-    function onPathValueNext(x) {
-        ++modelRoot.syncRefCount;
-        try {
-            observer.onNext(x);
-        } catch (e) {
-            throw e;
-        } finally {
-            --modelRoot.syncRefCount;
-        }
-    }
-}
-
-function pluckJSON(jsonEnvelope) {
-    return jsonEnvelope.json;
-}
-
-module.exports = GetResponse;
-
-},{"101":101,"182":182,"58":58,"8":8,"81":81,"83":83}],58:[function(require,module,exports){
-var Rx = require(182);
+},{"119":119,"137":137,"160":160,"161":161,"65":65,"9":9}],63:[function(require,module,exports){
+var Rx = require(161);
 var Observable = Rx.Observable;
 
-var ModelResponse = require(60);
+var ModelResponse = require(65);
 
-var pathSyntax = require(160);
+var pathSyntax = require(137);
 
-var getSize = require(93);
-var collectLru = require(48);
+var getSize = require(89);
+var collectLru = require(50);
 
-var arrayClone = require(80);
+var arrayClone = require(82);
 
 var isArray = Array.isArray;
-var isFunction = require(101);
-var isPathValue = require(105);
-var isJsonEnvelope = require(102);
-var isJsonGraphEnvelope = require(103);
+var isPathValue = require(101);
+var isJSONEnvelope = require(98);
+var isJSONGraphEnvelope = require(99);
 
 function IdempotentResponse(subscribe) {
     Observable.call(this, subscribe);
@@ -3583,28 +3701,9 @@ IdempotentResponse.prototype.subscribeLimit = 10;
 IdempotentResponse.prototype.initialize = function initializeResponse() {
 
     var model = this.model;
-    var selector = this.selector;
     var outputFormat = this.outputFormat || "AsPathMap";
     var isProgressive = this.isProgressive;
-    var values = [];
-    var seedIndex = 0;
-    var seedLimit = 0;
-
-    if (isFunction(selector)) {
-        outputFormat = "AsJSON";
-        seedLimit = selector.length;
-        while (seedIndex < seedLimit) {
-            values[seedIndex++] = {};
-        }
-        seedIndex = 0;
-    } else if (outputFormat === "AsJSON") {
-        seedLimit = -1;
-    } else if (outputFormat === "AsValues") {
-        values[0] = {};
-        isProgressive = false;
-    } else {
-        values[0] = {};
-    }
+    var values = [{}];
 
     var groups = [];
     var args = this.args;
@@ -3616,7 +3715,6 @@ IdempotentResponse.prototype.initialize = function initializeResponse() {
 
     // Validation of arguments have been moved out of this function.
     while (++argIndex < argCount) {
-        var seedCount = seedIndex + 1;
         var arg = args[argIndex];
         var argType;
         if (isArray(arg) || typeof arg === "string") {
@@ -3625,10 +3723,9 @@ IdempotentResponse.prototype.initialize = function initializeResponse() {
         } else if (isPathValue(arg)) {
             arg.path = pathSyntax.fromPath(arg.path);
             argType = "PathValues";
-        } else if (isJsonGraphEnvelope(arg)) {
+        } else if (isJSONGraphEnvelope(arg)) {
             argType = "JSONGs";
-            seedCount += arg.paths.length;
-        } else if (isJsonEnvelope(arg)) {
+        } else if (isJSONEnvelope(arg)) {
             argType = "PathMaps";
         }
         if (groupType !== argType) {
@@ -3638,32 +3735,10 @@ IdempotentResponse.prototype.initialize = function initializeResponse() {
                 arguments: []
             };
             groups.push(group);
-            if (outputFormat === "AsJSON") {
-                group.values = [];
-            } else if (outputFormat !== "AsValues") {
-                group.values = values;
-            }
+            group.values = values;
         }
 
         group.arguments.push(arg);
-
-        if (outputFormat === "AsJSON") {
-            var nextSeed;
-            if (seedLimit === -1) {
-                while (seedIndex < seedCount) {
-                    nextSeed = values[seedIndex++] = {};
-                    group.values.push(nextSeed);
-                }
-            } else {
-                if (seedLimit < seedCount) {
-                    seedCount = seedLimit;
-                }
-                while (seedIndex < seedCount) {
-                    nextSeed = values[seedIndex++] = {};
-                    group.values.push(nextSeed);
-                }
-            }
-        }
     }
 
     this.boundPath = arrayClone(model._path);
@@ -3699,13 +3774,11 @@ IdempotentResponse.prototype.ensureCollect = function ensureCollect(model) {
 
 module.exports = IdempotentResponse;
 
-},{"101":101,"102":102,"103":103,"105":105,"160":160,"182":182,"48":48,"60":60,"80":80,"93":93}],59:[function(require,module,exports){
-var Rx = require(182);
+},{"101":101,"137":137,"161":161,"50":50,"65":65,"82":82,"89":89,"98":98,"99":99}],64:[function(require,module,exports){
+var Rx = require(161);
 var Disposable = Rx.Disposable;
 
-var IdempotentResponse = require(58);
-
-var emptyArray = new Array(0);
+var IdempotentResponse = require(63);
 
 function InvalidateResponse(subscribe) {
     IdempotentResponse.call(this, subscribe || subscribeToInvalidateResponse);
@@ -3735,7 +3808,7 @@ function subscribeToInvalidateResponse(observer) {
         if (methodArgs.length > 0) {
             var operationName = "_" + method + inputType + "AsJSON";
             var operationFunc = model[operationName];
-            operationFunc(model, methodArgs, emptyArray);
+            operationFunc(model, methodArgs);
         }
     }
 
@@ -3746,19 +3819,17 @@ function subscribeToInvalidateResponse(observer) {
 
 module.exports = InvalidateResponse;
 
-},{"182":182,"58":58}],60:[function(require,module,exports){
-var falcor = require(30);
+},{"161":161,"63":63}],65:[function(require,module,exports){
+var falcor = require(33);
 
-var Rx = require(182);
+var Rx = require(161) && require(160);
 var Observable = Rx.Observable;
 
-var arraySlice = require(84);
+var arraySlice = require(85);
 
-var noop = require(109);
+var noop = require(105);
 
 var jsongMixin = { outputFormat: { value: "AsJSONG" } };
-var valuesMixin = { outputFormat: { value: "AsValues" } };
-var pathMapMixin = { outputFormat: { value: "AsPathMap" } };
 var progressiveMixin = { isProgressive: { value: true } };
 
 /**
@@ -3770,13 +3841,12 @@ function ModelResponse(subscribe) {
     this._subscribe = subscribe;
 }
 
-ModelResponse.create = function create(model, args, selector) {
+ModelResponse.create = function create(model, args) {
     var response = new ModelResponse(subscribeToResponse);
     // TODO: make these private
     response.args = args;
     response.type = this;
     response.model = model;
-    response.selector = selector;
     return response;
 };
 
@@ -3822,13 +3892,6 @@ model.
 "{\"path\":[\"user\",\"name\"],\"value\":\"Steve\"}"
 "{\"path\":[\"user\",\"surname\"],\"value\":\"McGuire\"}"
  */
-ModelResponse.prototype.toPathValues = function toPathValues() {
-    return this._mixin(valuesMixin).asObservable();
-};
-
-ModelResponse.prototype.toJSON = function toJSON() {
-    return this._mixin(pathMapMixin);
-};
 
 ModelResponse.prototype._toJSONG = function toJSONG() {
     return this._mixin(jsongMixin);
@@ -3943,7 +4006,6 @@ function subscribeToResponse(observer) {
 
     response.model = model;
     response.args = this.args;
-    response.selector = this.selector;
     response.outputFormat = observer.outputFormat || "AsPathMap";
     response.isProgressive = observer.isProgressive || false;
     response.subscribeCount = 0;
@@ -3958,17 +4020,15 @@ function subscribeToResponse(observer) {
 
 module.exports = ModelResponse;
 
-},{"109":109,"182":182,"30":30,"84":84}],61:[function(require,module,exports){
-var Rx = require(182);
+},{"105":105,"160":160,"161":161,"33":33,"85":85}],66:[function(require,module,exports){
+var Rx = require(161);
 var Observable = Rx.Observable;
 var Disposable = Rx.Disposable;
+var GetResponse = require(68);
+var IdempotentResponse = require(63);
+var InvalidSourceError = require(9);
 
-var IdempotentResponse = require(58);
-var InvalidSourceError = require(8);
-
-var arrayMap = require(83);
-var arrayFlatMap = require(82);
-var isFunction = require(101);
+var arrayFlatMap = require(83);
 var emptyArray = new Array(0);
 
 function SetResponse(subscribe) {
@@ -3994,7 +4054,7 @@ SetResponse.prototype.invokeSourceRequest = function invokeSourceRequest(model) 
             var optimizedPaths = results.optimizedPaths;
 
             model._path = emptyArray;
-            model._getPathValuesAsJSONG(model._materialize(), optimizedPaths, [envelope]);
+            model._getPathValuesAsJSONG(model._materialize().withoutDataSource(), optimizedPaths, [envelope]);
             model._path = boundPath;
             requestObs = model.
                 _request.set(envelope).
@@ -4034,145 +4094,422 @@ SetResponse.prototype.invokeSourceRequest = function invokeSourceRequest(model) 
 
 function subscribeToSetResponse(observer) {
 
-    if (this.subscribeCount >= this.subscribeLimit) {
+    if (this.isCompleted) {
+        return subscribeToFollowupGet.call(this, observer);
+    }
+
+    return subscribeToLocalSet.call(this, observer);
+}
+
+function subscribeToLocalSet(observer) {
+
+    if (this.subscribeCount++ > this.subscribeLimit) {
         observer.onError("Loop kill switch thrown.");
         return Disposable.empty;
     }
 
+    var requestedPaths = [];
+    var optimizedPaths = [];
     var model = this.model;
-    var materializedModel = this.materializedModel || model._materialize();
-    if (!this.materializedModel) {
-        this.materializedModel = materializedModel;
-    }
-
+    var isMaster = this.isMaster;
     var modelRoot = model._root;
-    var method = this.method;
     var outputFormat = this.outputFormat;
     var errorSelector = modelRoot.errorSelector;
-    var comparator = this.subscribeCount++ > 0 && modelRoot.comparator || void 0;
 
-    var isMaster = this.isMaster;
-    var isCompleted = this.isCompleted;
-    var isProgressive = this.isProgressive;
-    var asJSONG = outputFormat === "AsJSONG";
-    var asValues = outputFormat === "AsValues";
-    var hasValue = false;
-
-    var errors = [];
-    var optimizedPaths = [];
-
+    var method = this.method;
     var groups = this.groups;
     var groupIndex = -1;
     var groupCount = groups.length;
-    var modelToUse = model;
-
-    if (isCompleted) {
-        method = "get";
-    } else {
-        modelToUse = materializedModel;
-    }
 
     while (++groupIndex < groupCount) {
 
         var group = groups[groupIndex];
-        var groupValues = !asValues && group.values || onPathValueNext;
-
         var inputType = group.inputType;
         var methodArgs = group.arguments;
-
-        if (isCompleted) {
-            if (inputType === "PathValues") {
-                inputType = "PathValues";
-                methodArgs = arrayMap(methodArgs, pluckPath);
-            } else if (inputType === "JSONGs") {
-                inputType = "PathValues";
-                methodArgs = arrayFlatMap(methodArgs, pluckPaths);
-            }
-        }
 
         if (methodArgs.length > 0) {
 
             var operationName = "_" + method + inputType + outputFormat;
             var operationFunc = model[operationName];
-            var results = operationFunc(modelToUse, methodArgs, groupValues, errorSelector, comparator);
+            var successfulPaths = operationFunc(model, methodArgs, null, errorSelector);
 
-            errors.push.apply(errors, results.errors);
-            optimizedPaths.push.apply(optimizedPaths, results.optimizedPaths);
+            optimizedPaths.push.apply(optimizedPaths, successfulPaths[1]);
 
-            hasValue = !asValues && (hasValue || results.hasValue || results.requestedPaths.length > 0);
+            if (inputType === "PathValues") {
+                requestedPaths.push.apply(requestedPaths, methodArgs.map(pluckPath));
+            } else if (inputType === "JSONGs") {
+                requestedPaths.push.apply(requestedPaths, arrayFlatMap(methodArgs, pluckEnvelopePaths));
+            } else {
+                requestedPaths.push.apply(requestedPaths, successfulPaths[0]);
+            }
         }
     }
 
-    var hasError = errors.length > 0;
+    this.requestedPaths = requestedPaths;
 
-    try {
-        modelRoot.syncRefCount++;
-        if (hasValue && (isProgressive || isCompleted || isMaster) && !asValues) {
-            var values = this.values;
-            var selector = this.selector;
-            if (isFunction(selector)) {
-                observer.onNext(selector.apply(model, values.map(pluckJSON)));
-            } else {
-                var valueIndex = -1;
-                var valueCount = values.length;
-                while (++valueIndex < valueCount) {
-                    observer.onNext(values[valueIndex]);
-                }
-            }
-        }
-        if (isCompleted || isMaster) {
-            if (hasError) {
-                observer.onError(errors);
-            } else {
-                observer.onCompleted();
-            }
-        } else {
-            if (asJSONG) {
-                this.values[0].paths = [];
-            }
-            observer.onError({
-                method: method,
-                optimizedPaths: optimizedPaths,
-                invokeSourceRequest: true
-            });
-        }
-    } catch (e) {
-        throw e;
-    } finally {
-        --modelRoot.syncRefCount;
-    }
-
-    return Disposable.empty;
-
-    function onPathValueNext(x) {
-        ++modelRoot.syncRefCount;
-        try {
-            observer.onNext(x);
-        } catch (e) {
-            throw e;
-        } finally {
-            --modelRoot.syncRefCount;
-        }
+    if (isMaster) {
+        this.isCompleted = true;
+        return subscribeToFollowupGet.call(this, observer);
+    } else {
+        observer.onError({
+            method: method,
+            optimizedPaths: optimizedPaths,
+            invokeSourceRequest: true
+        });
     }
 }
 
-function pluckJSON(jsonEnvelope) {
-    return jsonEnvelope.json;
+function subscribeToFollowupGet(observer) {
+    var response = new GetResponse(this.model, this.requestedPaths);
+    if (this.outputFormat === "AsJSONG") {
+        response = response._toJSONG();
+    }
+    if (this.isProgressive) {
+        response = response.progressively();
+    }
+    return response.subscribe(observer);
 }
 
 function pluckPath(pathValue) {
     return pathValue.path;
 }
 
-function pluckPaths(jsonGraphEnvelope) {
+function pluckEnvelopePaths(jsonGraphEnvelope) {
     return jsonGraphEnvelope.paths;
 }
 
 module.exports = SetResponse;
 
-},{"101":101,"182":182,"58":58,"8":8,"82":82,"83":83}],62:[function(require,module,exports){
-var asap = require(135);
-var Rx = require(182);
+},{"161":161,"63":63,"68":68,"83":83,"9":9}],67:[function(require,module,exports){
+/**
+ * Will allow for state tracking of the current disposable.  Also fulfills the
+ * disposable interface.
+ * @private
+ */
+var AssignableDisposable = function AssignableDisposable(disosableCallback) {
+    this.disposed = false;
+    this.currentDisposable = disosableCallback;
+};
+
+
+AssignableDisposable.prototype = {
+
+    /**
+     * Disposes of the current disposable.  This would be the getRequestCycle
+     * disposable.
+     */
+    dispose: function dispose() {
+        if (this.disposed || !this.currentDisposable) {
+            return;
+        }
+        this.disposed = true;
+
+        // If the current disposable fulfills the disposable interface or just
+        // a disposable function.
+        var currentDisposable = this.currentDisposable;
+        if (currentDisposable.dispose) {
+            currentDisposable.dispose();
+        }
+
+        else {
+            currentDisposable();
+        }
+    }
+};
+
+
+module.exports = AssignableDisposable;
+
+},{}],68:[function(require,module,exports){
+var ModelResponse = require(65);
+var checkCacheAndReport = require(69);
+var getRequestCycle = require(70);
+var empty = {dispose: function() {}};
+var Observable = require(161).Observable;
+
+/**
+ * The get response.  It takes in a model and paths and starts
+ * the request cycle.  It has been optimized for cache first requests
+ * and closures.
+ * @param {Model} model -
+ * @param {Array} paths -
+ * @private
+ */
+var GetResponse = module.exports = function GetResponse(model, paths,
+                                                        isJSONGraph,
+                                                        isProgressive) {
+    this.model = model;
+    this.currentRemainingPaths = paths;
+    this.isJSONGraph = isJSONGraph || false;
+    this.isProgressive = isProgressive || false;
+};
+
+GetResponse.prototype = Object.create(Observable.prototype);
+
+// becomes a subscribable/thenable from ModelResponse.
+GetResponse.prototype.subscribe = ModelResponse.prototype.subscribe;
+GetResponse.prototype.then = ModelResponse.prototype.then;
+
+/**
+ * Makes the output of a get response JSONGraph instead of json.
+ * @private
+ */
+GetResponse.prototype._toJSONG = function _toJSONGraph() {
+    return new GetResponse(this.model, this.currentRemainingPaths,
+                           true, this.isProgressive);
+};
+
+/**
+ * Progressively responding to data in the cache instead of once the whole
+ * operation is complete.
+ * @public
+ */
+GetResponse.prototype.progressively = function progressively() {
+    return new GetResponse(this.model, this.currentRemainingPaths,
+                           this.isJSONGraph, true);
+};
+
+/**
+ * purely for the purposes of closure creation other than the initial
+ * prototype created closure.
+ *
+ * @private
+ */
+GetResponse.prototype._subscribe = function _subscribe(observer) {
+    var seed = [{}];
+    var errors = [];
+    var isJSONG = observer.isJSONG = this.isJSONGraph;
+    var isProgressive = this.isProgressive;
+    var results = checkCacheAndReport(this.model, this.currentRemainingPaths,
+                                      observer, isProgressive, isJSONG, seed,
+                                      errors);
+
+    // If there are no results, finish.
+    if (!results) {
+        return empty;
+    }
+
+    // Starts the async request cycle.
+    return getRequestCycle(this, this.model, results,
+                           observer, seed, errors, 1);
+};
+
+},{"161":161,"65":65,"69":69,"70":70}],69:[function(require,module,exports){
+var gets = require(20);
+var getWithPathsAsJSONGraph = gets.getWithPathsAsJSONGraph;
+var getWithPathsAsPathMap = gets.getWithPathsAsPathMap;
+
+/**
+ * Checks cache for the paths and reports if in progressive mode.  If
+ * there are missing paths then return the cache hit results.
+ *
+ * @param {Model} model - The model that the request was made with.
+ * @param {Array} requestedMissingPaths -
+ * @param {Boolean} progressive -
+ * @param {Boolean} isJSONG -
+ * @param {Function} onNext -
+ * @param {Function} onError -
+ * @param {Function} onCompleted -
+ * @param {Object} seed - The state of the output
+ * @private
+ */
+module.exports = function checkCacheAndReport(model, requestedPaths, observer,
+                                              progressive, isJSONG, seed,
+                                              errors) {
+
+    // checks the cache for the data.
+    var results;
+    if (isJSONG) {
+        results = getWithPathsAsJSONGraph(model, requestedPaths, seed);
+    } else {
+        results = getWithPathsAsPathMap(model, requestedPaths, seed);
+    }
+
+    // We must communicate critical errors from get that are critical
+    // errors such as bound path is broken or this is a JSONGraph request
+    // with a bound path.
+    if (results.criticalError) {
+        observer.onError(results.criticalError);
+        return null;
+    }
+
+    // We are done when there are no missing paths or the model does not
+    // have a dataSource to continue on fetching from.
+    var hasValues = results.hasValue;
+    var completed = !results.requestedMissingPaths || !model._source;
+
+    // Copy the errors into the total errors array.
+    if (results.errors) {
+        var errs = results.errors;
+        var errorsLength = errors.length;
+        for (var i = 0, len = errs.length; i < len; ++i, ++errorsLength) {
+            errors[errorsLength] = errs[i];
+        }
+    }
+
+    // If there are values to report, then report.
+
+    if (hasValues && (progressive || completed)) {
+        // TODO: Remove the sync counter
+        try {
+            ++model._root.syncRefCount;
+            observer.onNext(seed[0]);
+        } catch(e) {
+            throw e;
+        } finally {
+            --model._root.syncRefCount;
+        }
+    }
+
+    // if there are missing paths, then lets return them.
+    if (completed) {
+        if (errors.length) {
+            observer.onError(errors);
+        } else {
+            observer.onCompleted();
+        }
+
+        return null;
+    }
+
+    // Return the results object.
+    return results;
+};
+
+},{"20":20}],70:[function(require,module,exports){
+var checkCacheAndReport = require(69);
+var MaxRetryExceededError = require(10);
+var fastCat = require(31).fastCat;
+var collectLru = require(50);
+var getSize = require(89);
+var AssignableDisposable = require(67);
+
+/**
+ * The get request cycle for checking the cache and reporting
+ * values.  If there are missing paths then the async request cycle to
+ * the data source is performed until all paths are resolved or max
+ * requests are made.
+ * @param {GetResponse} getResponse -
+ * @param {Model} model - The model that the request was made with.
+ * @param {Object} results -
+ * @param {Function} onNext -
+ * @param {Function} onError -
+ * @param {Function} onCompleted -
+ * @param {Object} seedArg - The state of the output
+ * @private
+ */
+module.exports = function getRequestCycle(getResponse, model, results, observer,
+                                          seed, errors, count) {
+    // we have exceeded the maximum retry limit.
+    if (count === 10) {
+        throw new MaxRetryExceededError();
+    }
+
+    var requestQueue = model._request;
+    var requestedMissingPaths = results.requestedMissingPaths;
+    var optimizedMissingPaths = results.optimizedMissingPaths;
+    var disposable = new AssignableDisposable();
+
+    // We need to prepend the bound path to all requested missing paths and
+    // pass those into the requestQueue.
+    var boundRequestedMissingPaths = [];
+    var boundPath = model._path;
+    if (boundPath.length) {
+        for (var i = 0, len = requestedMissingPaths.length; i < len; ++i) {
+            boundRequestedMissingPaths[i] =
+                fastCat(boundPath, requestedMissingPaths[i]);
+        }
+    }
+
+    // No bound path, no array copy and concat.
+    else {
+        boundRequestedMissingPaths = requestedMissingPaths;
+    }
+
+    var currentRequestDisposable = requestQueue.
+        get(boundRequestedMissingPaths, optimizedMissingPaths, function() {
+
+
+            // Once the request queue finishes, check the cache and bail if
+            // we can.
+            var nextResults = checkCacheAndReport(model, requestedMissingPaths,
+                                                  observer,
+                                                  getResponse.isProgressive,
+                                                  getResponse.isJSONGraph,
+                                                  seed, errors);
+
+            // If there are missing paths coming back form checkCacheAndReport
+            // the its reported from the core cache check method.
+            if (nextResults) {
+
+                // update the which disposable to use.
+                disposable.currentDisposable =
+                    getRequestCycle(getResponse, model, nextResults, observer,
+                                    seed, errors, count + 1);
+            }
+
+            // We have finished.  Since we went to the dataSource, we must
+            // collect on the cache.
+            else {
+
+                var modelRoot = model._root;
+                var modelCache = modelRoot.cache;
+                collectLru(modelRoot, modelRoot.expired, getSize(modelCache),
+                        model._maxSize, model._collectRatio);
+            }
+
+        });
+    disposable.currentDisposable = currentRequestDisposable;
+    return disposable;
+};
+
+},{"10":10,"31":31,"50":50,"67":67,"69":69,"89":89}],71:[function(require,module,exports){
+var GetResponse = require(68);
+
+/**
+ * Performs a get on the cache and if there are missing paths
+ * then the request will be forwarded to the get request cycle.
+ * @private
+ */
+module.exports = function getWithPaths(paths) {
+    return new GetResponse(this, paths);
+};
+
+},{"68":68}],72:[function(require,module,exports){
+var pathSyntax = require(137);
+var ModelResponse = require(65);
+var GET_VALID_INPUT = require(73);
+var validateInput = require(115);
+var GetResponse = require(68);
+
+/**
+ * Performs a get on the cache and if there are missing paths
+ * then the request will be forwarded to the get request cycle.
+ * @private
+ */
+module.exports = function get() {
+    // Validates the input.  If the input is not pathSets or strings then we
+    // will onError.
+    var out = validateInput(arguments, GET_VALID_INPUT, "get");
+    if (out !== true) {
+        return new ModelResponse(function(o) {
+            o.onError(out);
+        });
+    }
+
+    var paths = pathSyntax.fromPathsOrPathValues(arguments);
+    return new GetResponse(this, paths);
+};
+
+},{"115":115,"137":137,"65":65,"68":68,"73":73}],73:[function(require,module,exports){
+module.exports = {
+    path: true,
+    pathSyntax: true
+};
+
+},{}],74:[function(require,module,exports){
+var asap = require(122);
+var Rx = require(161);
 var Disposable = Rx.Disposable;
 
 function ASAPScheduler() {}
@@ -4192,8 +4529,8 @@ ASAPScheduler.prototype.scheduleWithState = function scheduleWithState(state, ac
 
 module.exports = ASAPScheduler;
 
-},{"135":135,"182":182}],63:[function(require,module,exports){
-var Rx = require(182);
+},{"122":122,"161":161}],75:[function(require,module,exports){
+var Rx = require(161);
 var Disposable = Rx.Disposable;
 
 function ImmediateScheduler() {}
@@ -4210,8 +4547,8 @@ ImmediateScheduler.prototype.scheduleWithState = function scheduleWithState(stat
 
 module.exports = ImmediateScheduler;
 
-},{"182":182}],64:[function(require,module,exports){
-var Rx = require(182);
+},{"161":161}],76:[function(require,module,exports){
+var Rx = require(161);
 var Disposable = Rx.Disposable;
 
 function TimeoutScheduler(delay) {
@@ -4243,2263 +4580,759 @@ TimeoutScheduler.prototype.scheduleWithState = function scheduleWithState(state,
 
 module.exports = TimeoutScheduler;
 
-},{"182":182}],65:[function(require,module,exports){
-module.exports = setCache;
+},{"161":161}],77:[function(require,module,exports){
+var __key = require(37);
+var __ref = require(44);
+var __context = require(34);
+var __version = require(47);
+var __refIndex = require(43);
+var __refsLength = require(45);
 
-var $error = require(126);
-var $atom = require(125);
+var $ref = require(119);
 
-var arrayClone = require(80);
-
-var options = require(111);
-var walkPathMap = require(131);
-
-var isObject = require(104);
-
-var getValidKey = require(95);
-var createBranch = require(91);
-var wrapNode = require(124);
-var replaceNode = require(115);
-var graphNode = require(96);
-var updateGraph = require(122);
-
-var promote = require(49);
-
-var positions = require(113);
-var _cache = positions.cache;
+var promote = require(51);
+var isExpired = require(95);
+var isFunction = require(97);
+var isPrimitive = require(102);
+var expireNode = require(87);
+var iterateKeySet = require(146).iterateKeySet;
+var incrementVersion = require(93);
+var mergeJSONGraphNode = require(103);
 
 /**
- * Populates a model's cache from an existing deserialized cache.
- * Traverses the existing cache as a path map, writing all the leaves
- * into the model's cache as they're encountered.
- * @private
+ * Merges a list of JSON Graph Envelopes into a cache JSON Graph.
+ * @function
+ * @param {Object} model - the Model for which to insert the PathValues.
+ * @param {Array.<PathValue>} jsonGraphEnvelopes - the PathValues to set.
+ * @return {Array.<Path>} - a list of optimized paths for the successfully set values.
  */
-function setCache(model, pathmap, errorSelector) {
+
+module.exports = function setJSONGraphs(model, jsonGraphEnvelopes, x, errorSelector, comparator) {
 
     var modelRoot = model._root;
+    var lru = modelRoot;
+    var expired = modelRoot.expired;
+    var version = incrementVersion();
+    var cache = modelRoot.cache;
+    var initialVersion = cache[__version];
 
-    var roots = options([], model, errorSelector);
-    var nodes = roots.nodes;
-    var parents = arrayClone(nodes);
-    var requested = [];
-    var optimized = [];
-    var keysStack = [];
-
-    roots[_cache] = roots.root;
-
-    walkPathMap(onNode, onEdge, pathmap, keysStack, 0, roots, parents, nodes, requested, optimized);
-
-    var rootChangeHandler = modelRoot.onChange;
-
-    if (rootChangeHandler) {
-        rootChangeHandler();
-    }
-
-    return model;
-}
-
-function onNode(pathmap, roots, parents, nodes, requested, optimized, isReference, isBranch, keyArg, keyset, isKeyset) {
-
-    var key = keyArg;
-    var parent;
-
-    if (key == null) {
-        key = getValidKey(optimized);
-        if (key == null) {
-            return;
-        }
-        parent = parents[_cache];
-    } else {
-        parent = nodes[_cache];
-    }
-
-    var node = parent[key],
-        type;
-
-    if (isBranch) {
-        type = isObject(node) && node.$type || void 0;
-        node = createBranch(roots, parent, node, type, key);
-        parents[_cache] = nodes[_cache] = node;
-        return;
-    }
-
-    var selector = roots.errorSelector;
-    var root = roots[_cache];
-    var size = isObject(node) && node.$size || 0;
-    var mess = pathmap;
-
-    type = isObject(mess) && mess.$type || void 0;
-    mess = wrapNode(mess, type, Boolean(type) ? mess.value : mess);
-    type = type || $atom;
-
-    if (type === $error && Boolean(selector)) {
-        mess = selector(requested, mess);
-    }
-
-    node = replaceNode(parent, node, mess, key, roots.lru);
-    node = graphNode(root, parent, node, key, roots.version);
-    updateGraph(parent, size - node.$size, roots.version, roots.lru);
-    nodes[_cache] = node;
-}
-
-function onEdge(pathmap, keysStack, depth, roots, parents, nodes, requested, optimized, key, keyset) {
-    if (depth > 0) {
-        promote(roots.lru, nodes[_cache]);
-    }
-}
-
-},{"104":104,"111":111,"113":113,"115":115,"122":122,"124":124,"125":125,"126":126,"131":131,"49":49,"80":80,"91":91,"95":95,"96":96}],66:[function(require,module,exports){
-module.exports = setJsonGraphAsJsonDense;
-
-var __version = require(45);
-
-var clone = require(85);
-var arrayClone = require(80);
-
-var options = require(111);
-var walkPathSet = require(132);
-
-var isObject = require(104);
-
-var getValidKey = require(95);
-var mergeNode = require(108);
-
-var setNodeIfMissingPath = require(119);
-var setNodeIfError = require(118);
-var setSuccessfulPaths = require(116);
-
-var positions = require(113);
-var _cache = positions.cache;
-var _message = positions.message;
-var _json = positions.json;
-
-function setJsonGraphAsJsonDense(model, envelopes, values, errorSelector, comparator) {
-
-    var modelRoot = model._root;
-    var modelCache = modelRoot.cache;
-    var initialVersion = modelCache[__version];
-
-    var roots = [];
-    roots.offset = model._path.length;
-    roots.bound = [];
-    roots = options(roots, model, errorSelector, comparator);
-
-    var index = -1;
-    var index2 = -1;
-    var count = envelopes.length;
-    var nodes = roots.nodes;
-    var parents = arrayClone(nodes);
-    var requested = [];
-    var optimized = [];
-    var json, hasValue, hasValues;
-
-    roots[_cache] = roots.root;
-
-    while (++index < count) {
-        var envelope = envelopes[index];
-        var pathsets = envelope.paths;
-        var jsong = envelope.jsonGraph || envelope.jsong || envelope.values || envelope.value;
-        var index3 = -1;
-        var count2 = pathsets.length;
-        roots[_message] = jsong;
-        nodes[_message] = jsong;
-        while (++index3 < count2) {
-
-            json = values && values[++index2];
-            if (isObject(json)) {
-                roots.json = roots[_json] = parents[_json] = nodes[_json] = json.json || (json.json = {});
-            } else {
-                roots.json = roots[_json] = parents[_json] = nodes[_json] = void 0;
-            }
-
-            var pathset = pathsets[index3];
-            roots.index = index3;
-
-            walkPathSet(onNode, onEdge, pathset, 0, roots, parents, nodes, requested, optimized);
-
-            hasValue = roots.hasValue;
-            if (Boolean(hasValue)) {
-                hasValues = true;
-                if (isObject(json)) {
-                    json.json = roots.json;
-                }
-                delete roots.json;
-                delete roots.hasValue;
-            } else if (isObject(json)) {
-                delete json.json;
-            }
-        }
-    }
-
-    var newVersion = modelCache[__version];
-    var rootChangeHandler = modelRoot.onChange;
-
-    if (rootChangeHandler && initialVersion !== newVersion) {
-        rootChangeHandler();
-    }
-
-    return {
-        values: values,
-        errors: roots.errors,
-        hasValue: hasValues,
-        requestedPaths: roots.requestedPaths,
-        optimizedPaths: roots.optimizedPaths,
-        requestedMissingPaths: roots.requestedMissingPaths,
-        optimizedMissingPaths: roots.optimizedMissingPaths
-    };
-}
-
-function onNode(pathset, roots, parents, nodes, requested, optimized, isReference, isBranch, keyArg, keyset, isKeyset) {
-
-    var key = keyArg;
-    var parent, messageParent, json;
-
-    if (key == null) {
-        key = getValidKey(optimized);
-        if (key == null) {
-            return;
-        }
-        json = parents[_json];
-        parent = parents[_cache];
-        messageParent = parents[_message];
-    } else {
-        json = isKeyset && nodes[_json] || parents[_json];
-        parent = nodes[_cache];
-        messageParent = nodes[_message];
-    }
-
-    var node = parent[key];
-    var message = messageParent && messageParent[key];
-
-    nodes[_message] = message;
-    nodes[_cache] = node = mergeNode(roots, parent, node, messageParent, message, key, requested);
-
-    if (isReference) {
-        parents[_cache] = parent;
-        parents[_message] = messageParent;
-        return;
-    }
-
-    var length = requested.length;
-    var offset = roots.offset;
-
-    parents[_json] = json;
-
-    if (isBranch) {
-        parents[_cache] = node;
-        parents[_message] = message;
-        if ((length > offset) && isKeyset && Boolean(json)) {
-            nodes[_json] = json[keyset] || (json[keyset] = {});
-        }
-    }
-}
-
-function onEdge(pathset, depth, roots, parents, nodes, requested, optimized, key, keyset) {
-
-    var json;
-    var node = nodes[_cache];
-    var type = isObject(node) && node.$type || (node = void 0);
-    var isMissingPath = setNodeIfMissingPath(roots, node, type, pathset, depth, requested, optimized);
-
-    if (isMissingPath) {
-        return;
-    }
-
-    var isError = setNodeIfError(roots, node, type, requested);
-
-    if (isError) {
-        return;
-    }
-
-    if (roots.isDistinct === true) {
-        roots.isDistinct = false;
-        setSuccessfulPaths(roots, requested, optimized);
-        if (keyset == null) {
-            roots.json = clone(roots, node, type, node && node.value);
-        } else {
-            json = parents[_json];
-            if (Boolean(json)) {
-                json[keyset] = clone(roots, node, type, node && node.value);
-            }
-        }
-        roots.hasValue = true;
-    }
-}
-
-},{"104":104,"108":108,"111":111,"113":113,"116":116,"118":118,"119":119,"132":132,"45":45,"80":80,"85":85,"95":95}],67:[function(require,module,exports){
-module.exports = setJsonGraphAsJsonGraph;
-
-var $ref = require(127);
-var __version = require(45);
-
-var clone = require(86);
-var arrayClone = require(80);
-
-var options = require(111);
-var walkPathSet = require(132);
-
-var isObject = require(104);
-
-var getValidKey = require(95);
-var mergeNode = require(108);
-
-var setNodeIfMissingPath = require(119);
-var setSuccessfulPaths = require(116);
-
-var promote = require(49);
-
-var positions = require(113);
-var _cache = positions.cache;
-var _message = positions.message;
-var _jsong = positions.jsong;
-
-function setJsonGraphAsJsonGraph(model, envelopes, values, errorSelector, comparator) {
-
-    var modelRoot = model._root;
-    var modelCache = modelRoot.cache;
-    var initialVersion = modelCache[__version];
-
-    var roots = [];
-    roots.offset = 0;
-    roots.bound = [];
-    roots = options(roots, model, errorSelector, comparator);
-
-    var index = -1;
-    var count = envelopes.length;
-    var nodes = roots.nodes;
-    var parents = arrayClone(nodes);
-    var requested = [];
-    var optimized = [];
-    var json = values[0];
-    var hasValue;
-
-    roots[_cache] = roots.root;
-    roots[_jsong] = parents[_jsong] = nodes[_jsong] = json.jsonGraph || (json.jsonGraph = {});
-    roots.requestedPaths = json.paths || (json.paths = roots.requestedPaths);
-
-    while (++index < count) {
-        var envelope = envelopes[index];
-        var pathsets = envelope.paths;
-        var jsong = envelope.jsonGraph || envelope.jsong || envelope.values || envelope.value;
-        var index2 = -1;
-        var count2 = pathsets.length;
-        roots[_message] = jsong;
-        nodes[_message] = jsong;
-        while (++index2 < count2) {
-            var pathset = pathsets[index2];
-            walkPathSet(onNode, onEdge, pathset, 0, roots, parents, nodes, requested, optimized);
-        }
-    }
-
-    hasValue = roots.hasValue;
-    if (hasValue) {
-        json.jsonGraph = roots[_jsong];
-    } else {
-        delete json.jsonGraph;
-        delete json.paths;
-    }
-
-    var newVersion = modelCache[__version];
-    var rootChangeHandler = modelRoot.onChange;
-
-    if (rootChangeHandler && initialVersion !== newVersion) {
-        rootChangeHandler();
-    }
-
-    return {
-        values: values,
-        errors: roots.errors,
-        hasValue: hasValue,
-        requestedPaths: roots.requestedPaths,
-        optimizedPaths: roots.optimizedPaths,
-        requestedMissingPaths: roots.requestedMissingPaths,
-        optimizedMissingPaths: roots.optimizedMissingPaths
-    };
-}
-
-function onNode(pathset, roots, parents, nodes, requested, optimized, isReference, isBranch, keyArg, keyset, isKeyset) {
-
-    var key = keyArg;
-    var parent, messageParent, json;
-
-    if (key == null) {
-        key = getValidKey(optimized);
-        if (key == null) {
-            return;
-        }
-        json = parents[_jsong];
-        parent = parents[_cache];
-        messageParent = parents[_message];
-    } else {
-        json = nodes[_jsong];
-        parent = nodes[_cache];
-        messageParent = nodes[_message];
-    }
-
-    var jsonkey = key;
-    var node = parent[key];
-    var message = messageParent && messageParent[key];
-
-    nodes[_message] = message;
-    nodes[_cache] = node = mergeNode(roots, parent, node, messageParent, message, key, requested);
-
-    var type = isObject(node) && node.$type || void 0;
-
-    if (isReference) {
-        parents[_cache] = parent;
-        parents[_message] = messageParent;
-        parents[_jsong] = json;
-        if (type === $ref) {
-            json[jsonkey] = clone(roots, node, type, node.value);
-            roots.hasValue = true;
-        } else {
-            nodes[_jsong] = json[jsonkey] || (json[jsonkey] = {});
-        }
-        return;
-    }
-
-    if (isBranch) {
-        parents[_cache] = node;
-        parents[_message] = message;
-        parents[_jsong] = json;
-        if (type === $ref) {
-            json[jsonkey] = clone(roots, node, type, node.value);
-            roots.hasValue = true;
-        } else {
-            nodes[_jsong] = json[jsonkey] || (json[jsonkey] = {});
-        }
-        return;
-    }
-
-    if (roots.isDistinct === true) {
-        roots.isDistinct = false;
-        json[jsonkey] = clone(roots, node, type, node && node.value);
-        roots.hasValue = true;
-    }
-}
-
-function onEdge(pathset, depth, roots, parents, nodes, requested, optimized, key, keyset) {
-
-    var json;
-    var node = nodes[_cache];
-    var type = isObject(node) && node.$type || (node = void 0);
-
-    var isMissingPath = setNodeIfMissingPath(roots, node, type, pathset, depth, requested, optimized);
-
-    if (isMissingPath) {
-        return;
-    }
-
-    promote(roots.lru, node);
-
-    setSuccessfulPaths(roots, requested, optimized);
-
-    if (keyset == null && !roots.hasValue && getValidKey(optimized) == null) {
-        node = clone(roots, node, type, node && node.value);
-        json = roots[_jsong];
-        json.$type = node.$type;
-        json.value = node.value;
-    }
-    roots.hasValue = true;
-}
-
-},{"104":104,"108":108,"111":111,"113":113,"116":116,"119":119,"127":127,"132":132,"45":45,"49":49,"80":80,"86":86,"95":95}],68:[function(require,module,exports){
-module.exports = setJsonGraphAsJsonSparse;
-
-var $ref = require(127);
-var __version = require(45);
-
-var clone = require(85);
-var arrayClone = require(80);
-
-var options = require(111);
-var walkPathSet = require(132);
-
-var isObject = require(104);
-
-var getValidKey = require(95);
-var mergeNode = require(108);
-
-var setNodeIfMissingPath = require(119);
-var setNodeIfError = require(118);
-var setSuccessfulPaths = require(116);
-
-var positions = require(113);
-var _cache = positions.cache;
-var _message = positions.message;
-var _json = positions.json;
-
-function setJsonGraphAsJsonSparse(model, envelopes, values, errorSelector, comparator) {
-
-    var modelRoot = model._root;
-    var modelCache = modelRoot.cache;
-    var initialVersion = modelCache[__version];
-
-    var roots = [];
-    roots.offset = model._path.length;
-    roots.bound = [];
-    roots = options(roots, model, errorSelector, comparator);
-
-    var index = -1;
-    var count = envelopes.length;
-    var nodes = roots.nodes;
-    var parents = arrayClone(nodes);
-    var requested = [];
-    var optimized = [];
-    var json = values[0];
-    var hasValue;
-
-    roots[_cache] = roots.root;
-    roots[_json] = parents[_json] = nodes[_json] = json.json || (json.json = {});
-
-    while (++index < count) {
-        var envelope = envelopes[index];
-        var pathsets = envelope.paths;
-        var jsong = envelope.jsonGraph || envelope.jsong || envelope.values || envelope.value;
-        var index2 = -1;
-        var count2 = pathsets.length;
-        roots[_message] = jsong;
-        nodes[_message] = jsong;
-        while (++index2 < count2) {
-            var pathset = pathsets[index2];
-            walkPathSet(onNode, onEdge, pathset, 0, roots, parents, nodes, requested, optimized);
-        }
-    }
-
-    hasValue = roots.hasValue;
-    if (hasValue) {
-        json.json = roots[_json];
-    } else {
-        delete json.json;
-    }
-
-    var newVersion = modelCache[__version];
-    var rootChangeHandler = modelRoot.onChange;
-
-    if (rootChangeHandler && initialVersion !== newVersion) {
-        rootChangeHandler();
-    }
-
-    return {
-        values: values,
-        errors: roots.errors,
-        hasValue: hasValue,
-        requestedPaths: roots.requestedPaths,
-        optimizedPaths: roots.optimizedPaths,
-        requestedMissingPaths: roots.requestedMissingPaths,
-        optimizedMissingPaths: roots.optimizedMissingPaths
-    };
-}
-
-function onNode(pathset, roots, parents, nodes, requested, optimized, isReference, isBranch, keyArg, keyset, isKeyset) {
-
-    var key = keyArg;
-    var parent, messageParent, json, jsonkey;
-
-    if (key == null) {
-        key = getValidKey(optimized);
-        if (key == null) {
-            return;
-        }
-        jsonkey = getValidKey(requested);
-        json = parents[_json];
-        parent = parents[_cache];
-        messageParent = parents[_message];
-    } else {
-        jsonkey = key;
-        json = nodes[_json];
-        parent = nodes[_cache];
-        messageParent = nodes[_message];
-    }
-
-    var node = parent[key];
-    var message = messageParent && messageParent[key];
-
-    nodes[_message] = message;
-    nodes[_cache] = node = mergeNode(roots, parent, node, messageParent, message, key, requested);
-
-    if (isReference) {
-        parents[_cache] = parent;
-        parents[_message] = messageParent;
-        return;
-    }
-
-    parents[_json] = json;
-
-    if (isBranch) {
-        var length = requested.length;
-        var offset = roots.offset;
-        var type = isObject(node) && node.$type || void 0;
-
-        parents[_cache] = node;
-        parents[_message] = message;
-        if ((length > offset) && (!type || type === $ref)) {
-            nodes[_json] = json[jsonkey] || (json[jsonkey] = {});
-        }
-    }
-}
-
-function onEdge(pathset, depth, roots, parents, nodes, requested, optimized, key, keyset) {
-
-    var json;
-    var node = nodes[_cache];
-    var type = isObject(node) && node.$type || (node = void 0);
-
-    var isMissingPath = setNodeIfMissingPath(roots, node, type, pathset, depth, requested, optimized);
-
-    if (isMissingPath) {
-        return;
-    }
-
-    var isError = setNodeIfError(roots, node, type, requested);
-
-    if (isError) {
-        return;
-    }
-
-    if (roots.isDistinct === true) {
-        roots.isDistinct = false;
-        setSuccessfulPaths(roots, requested, optimized);
-        if (keyset == null && !roots.hasValue && getValidKey(optimized) == null) {
-            node = clone(roots, node, type, node && node.value);
-            json = roots[_json];
-            json.$type = node.$type;
-            json.value = node.value;
-        } else {
-            json = parents[_json];
-            json[key] = clone(roots, node, type, node && node.value);
-        }
-        roots.hasValue = true;
-    }
-}
-
-},{"104":104,"108":108,"111":111,"113":113,"116":116,"118":118,"119":119,"127":127,"132":132,"45":45,"80":80,"85":85,"95":95}],69:[function(require,module,exports){
-module.exports = setJsonGraphAsJsonValues;
-
-var __version = require(45);
-
-var clone = require(85);
-var arrayClone = require(80);
-var arraySlice = require(84);
-
-var options = require(111);
-var walkPathSet = require(132);
-
-var isObject = require(104);
-
-var getValidKey = require(95);
-var mergeNode = require(108);
-
-var setNodeIfMissingPath = require(119);
-var setNodeIfError = require(118);
-var setSuccessfulPaths = require(116);
-
-var positions = require(113);
-var _cache = positions.cache;
-var _message = positions.message;
-
-function setJsonGraphAsJsonValues(model, envelopes, onNext, errorSelector, comparator) {
-
-    var modelRoot = model._root;
-    var modelCache = modelRoot.cache;
-    var initialVersion = modelCache[__version];
-
-    var roots = [];
-    roots.offset = model._path.length;
-    roots.bound = [];
-    roots = options(roots, model, errorSelector, comparator);
-
-    var index = -1;
-    var count = envelopes.length;
-    var nodes = roots.nodes;
-    var parents = arrayClone(nodes);
-    var requested = [];
-    var optimized = [];
-
-    roots[_cache] = roots.root;
-    roots.onNext = onNext;
-
-    while (++index < count) {
-        var envelope = envelopes[index];
-        var pathsets = envelope.paths;
-        var jsong = envelope.jsonGraph || envelope.jsong || envelope.values || envelope.value;
-        var index2 = -1;
-        var count2 = pathsets.length;
-        roots[_message] = jsong;
-        nodes[_message] = jsong;
-        while (++index2 < count2) {
-            var pathset = pathsets[index2];
-            walkPathSet(onNode, onEdge, pathset, 0, roots, parents, nodes, requested, optimized);
-        }
-    }
-
-    var newVersion = modelCache[__version];
-    var rootChangeHandler = modelRoot.onChange;
-
-    if (rootChangeHandler && initialVersion !== newVersion) {
-        rootChangeHandler();
-    }
-
-    return {
-        values: null,
-        errors: roots.errors,
-        requestedPaths: roots.requestedPaths,
-        optimizedPaths: roots.optimizedPaths,
-        requestedMissingPaths: roots.requestedMissingPaths,
-        optimizedMissingPaths: roots.optimizedMissingPaths
-    };
-}
-
-function onNode(pathset, roots, parents, nodes, requested, optimized, isReference, isBranch, keyArg, keyset) {
-
-    var key = keyArg;
-    var parent, messageParent;
-
-    if (key == null) {
-        key = getValidKey(optimized);
-        if (key == null) {
-            return;
-        }
-        parent = parents[_cache];
-        messageParent = parents[_message];
-    } else {
-        parent = nodes[_cache];
-        messageParent = nodes[_message];
-    }
-
-    var node = parent[key];
-    var message = messageParent && messageParent[key];
-
-    nodes[_message] = message;
-    nodes[_cache] = node = mergeNode(roots, parent, node, messageParent, message, key, requested);
-
-    if (isReference) {
-        parents[_cache] = parent;
-        parents[_message] = messageParent;
-        return;
-    }
-
-    if (isBranch) {
-        parents[_cache] = node;
-        parents[_message] = message;
-    }
-}
-
-function onEdge(pathset, depth, roots, parents, nodes, requested, optimized, key, keyset, isKeyset) {
-
-    var node = nodes[_cache];
-    var type = isObject(node) && node.$type || (node = void 0);
-    var isMissingPath = setNodeIfMissingPath(roots, node, type, pathset, depth, requested, optimized);
-
-    if (isMissingPath) {
-        return;
-    }
-
-    var isError = setNodeIfError(roots, node, type, requested);
-
-    if (isError) {
-        return;
-    }
-
-    if (roots.isDistinct === true) {
-        roots.isDistinct = false;
-        setSuccessfulPaths(roots, requested, optimized);
-        roots.onNext({
-            path: arraySlice(requested, roots.offset),
-            value: clone(roots, node, type, node && node.value)
-        });
-    }
-}
-
-},{"104":104,"108":108,"111":111,"113":113,"116":116,"118":118,"119":119,"132":132,"45":45,"80":80,"84":84,"85":85,"95":95}],70:[function(require,module,exports){
-module.exports = setJsonSparseAsJsonDense;
-
-var $error = require(126);
-var $atom = require(125);
-var __version = require(45);
-
-var clone = require(85);
-var arrayClone = require(80);
-
-var options = require(111);
-var walkPathMap = require(131);
-
-var isObject = require(104);
-
-var getValidKey = require(95);
-var createBranch = require(91);
-var wrapNode = require(124);
-var replaceNode = require(115);
-var graphNode = require(96);
-var updateGraph = require(122);
-
-var setNodeIfError = require(118);
-var setSuccessfulPaths = require(116);
-
-var positions = require(113);
-var _cache = positions.cache;
-var _json = positions.json;
-
-function setJsonSparseAsJsonDense(model, pathmaps, values, errorSelector, comparator) {
-
-    var modelRoot = model._root;
-    var modelCache = modelRoot.cache;
-    var initialVersion = modelCache[__version];
-
-    var roots = options([], model, errorSelector, comparator);
-    var index = -1;
-    var count = pathmaps.length;
-    var nodes = roots.nodes;
-    var parents = arrayClone(nodes);
-    var requested = [];
-    var optimized = arrayClone(roots.bound);
-    var keysStack = [];
-    var json, hasValue, hasValues;
-
-    roots[_cache] = roots.root;
-
-    while (++index < count) {
-
-        json = values && values[index];
-        if (isObject(json)) {
-            roots.json = roots[_json] = parents[_json] = nodes[_json] = json.json || (json.json = {});
-        } else {
-            roots.json = roots[_json] = parents[_json] = nodes[_json] = void 0;
-        }
-
-        var pathmap = pathmaps[index].json;
-        roots.index = index;
-
-        walkPathMap(onNode, onEdge, pathmap, keysStack, 0, roots, parents, nodes, requested, optimized);
-
-        hasValue = roots.hasValue;
-        if (Boolean(hasValue)) {
-            hasValues = true;
-            if (isObject(json)) {
-                json.json = roots.json;
-            }
-            delete roots.json;
-            delete roots.hasValue;
-        } else if (isObject(json)) {
-            delete json.json;
-        }
-    }
-
-    var newVersion = modelCache[__version];
-    var rootChangeHandler = modelRoot.onChange;
-
-    if (rootChangeHandler && initialVersion !== newVersion) {
-        rootChangeHandler();
-    }
-
-    return {
-        values: values,
-        errors: roots.errors,
-        hasValue: hasValues,
-        requestedPaths: roots.requestedPaths,
-        optimizedPaths: roots.optimizedPaths,
-        requestedMissingPaths: roots.requestedMissingPaths,
-        optimizedMissingPaths: roots.optimizedMissingPaths
-    };
-}
-
-function onNode(pathmap, roots, parents, nodes, requested, optimized, isReference, isBranch, keyArg, keyset, isKeyset) {
-
-    var key = keyArg;
-    var parent, json;
-
-    if (key == null) {
-        key = getValidKey(optimized);
-        if (key == null) {
-            return;
-        }
-        json = parents[_json];
-        parent = parents[_cache];
-    } else {
-        json = isKeyset && nodes[_json] || parents[_json];
-        parent = nodes[_cache];
-    }
-
-    var node = parent[key],
-        type;
-
-    if (isReference) {
-        type = isObject(node) && node.$type || void 0;
-        type = type && isBranch && "." || type;
-        node = createBranch(roots, parent, node, type, key);
-        parents[_cache] = parent;
-        nodes[_cache] = node;
-        return;
-    }
-
-    parents[_json] = json;
-
-    if (isBranch) {
-        type = isObject(node) && node.$type || void 0;
-        node = createBranch(roots, parent, node, type, key);
-        parents[_cache] = nodes[_cache] = node;
-        if (isKeyset && Boolean(json)) {
-            nodes[_json] = json[keyset] || (json[keyset] = {});
-        }
-        return;
-    }
-
-    var selector = roots.errorSelector;
-    var comparator = roots.comparator;
-    var root = roots[_cache];
-    var size = isObject(node) && node.$size || 0;
-    var message = pathmap;
-
-    type = isObject(message) && message.$type || void 0;
-    message = wrapNode(message, type, Boolean(type) ? message.value : message);
-    type = type || $atom;
-
-    if (type === $error && Boolean(selector)) {
-        message = selector(requested, message);
-    }
-
-    var isDistinct = roots.isDistinct = true;
-
-    if (Boolean(comparator)) {
-        isDistinct = roots.isDistinct = !comparator(requested, node, message);
-    }
-
-    if (isDistinct) {
-        node = replaceNode(parent, node, message, key, roots.lru);
-        node = graphNode(root, parent, node, key, roots.version);
-        updateGraph(parent, size - node.$size, roots.version, roots.lru);
-    }
-    nodes[_cache] = node;
-}
-
-function onEdge(pathmap, keysStack, depth, roots, parents, nodes, requested, optimized, key, keyset) {
-
-    var json;
-    var node = nodes[_cache];
-    var type = isObject(node) && node.$type || (node = void 0);
-
-    var isError = setNodeIfError(roots, node, type, requested);
-
-    if (isError) {
-        return;
-    }
-
-    if (roots.isDistinct === true) {
-        roots.isDistinct = false;
-        setSuccessfulPaths(roots, requested, optimized);
-        if (keyset == null) {
-            roots.json = clone(roots, node, type, node && node.value);
-        } else {
-            json = parents[_json];
-            if (Boolean(json)) {
-                json[keyset] = clone(roots, node, type, node && node.value);
-            }
-        }
-        roots.hasValue = true;
-    }
-}
-
-},{"104":104,"111":111,"113":113,"115":115,"116":116,"118":118,"122":122,"124":124,"125":125,"126":126,"131":131,"45":45,"80":80,"85":85,"91":91,"95":95,"96":96}],71:[function(require,module,exports){
-module.exports = setJsonSparseAsJsonGraph;
-
-var $ref = require(127);
-var $error = require(126);
-var $atom = require(125);
-var __version = require(45);
-
-var clone = require(86);
-var arrayClone = require(80);
-
-var options = require(111);
-var walkPathMap = require(130);
-
-var isObject = require(104);
-
-var getValidKey = require(95);
-var createBranch = require(91);
-var wrapNode = require(124);
-var replaceNode = require(115);
-var graphNode = require(96);
-var updateGraph = require(122);
-
-var setSuccessfulPaths = require(116);
-
-var promote = require(49);
-
-var positions = require(113);
-var _cache = positions.cache;
-var _jsong = positions.jsong;
-
-function setJsonSparseAsJsonGraph(model, pathmaps, values, errorSelector, comparator) {
-
-    var modelRoot = model._root;
-    var modelCache = modelRoot.cache;
-    var initialVersion = modelCache[__version];
-
-    var roots = options([], model, errorSelector, comparator);
-    var index = -1;
-    var count = pathmaps.length;
-    var nodes = roots.nodes;
-    var parents = arrayClone(nodes);
-    var requested = [];
-    var optimized = arrayClone(roots.bound);
-    var keysStack = [];
-    var json = values[0];
-    var hasValue;
-
-    roots[_cache] = roots.root;
-    roots[_jsong] = parents[_jsong] = nodes[_jsong] = json.jsonGraph || (json.jsonGraph = {});
-    roots.requestedPaths = json.paths || (json.paths = roots.requestedPaths);
-
-    while (++index < count) {
-        var pathmap = pathmaps[index].json;
-        walkPathMap(onNode, onEdge, pathmap, keysStack, 0, roots, parents, nodes, requested, optimized);
-    }
-
-    hasValue = roots.hasValue;
-    if (hasValue) {
-        json.jsonGraph = roots[_jsong];
-    } else {
-        delete json.jsonGraph;
-        delete json.paths;
-    }
-
-    var newVersion = modelCache[__version];
-    var rootChangeHandler = modelRoot.onChange;
-
-    if (rootChangeHandler && initialVersion !== newVersion) {
-        rootChangeHandler();
-    }
-
-    return {
-        values: values,
-        errors: roots.errors,
-        hasValue: hasValue,
-        requestedPaths: roots.requestedPaths,
-        optimizedPaths: roots.optimizedPaths,
-        requestedMissingPaths: roots.requestedMissingPaths,
-        optimizedMissingPaths: roots.optimizedMissingPaths
-    };
-}
-
-function onNode(pathmap, roots, parents, nodes, requested, optimized, isReference, isBranch, keyArg, keyset, isKeyset) {
-
-    var key = keyArg;
-    var parent, json;
-
-    if (key == null) {
-        key = getValidKey(optimized);
-        if (key == null) {
-            return;
-        }
-        json = parents[_jsong];
-        parent = parents[_cache];
-    } else {
-        json = nodes[_jsong];
-        parent = nodes[_cache];
-    }
-
-    var jsonkey = key;
-    var node = parent[key],
-        type;
-
-    if (isReference) {
-        type = isObject(node) && node.$type || void 0;
-        type = type && isBranch && "." || type;
-        node = createBranch(roots, parent, node, type, key);
-        parents[_cache] = parent;
-        nodes[_cache] = node;
-        parents[_jsong] = json;
-        if (type === $ref) {
-            json[jsonkey] = clone(roots, node, type, node.value);
-            roots.hasValue = true;
-        } else {
-            nodes[_jsong] = json[jsonkey] || (json[jsonkey] = {});
-        }
-        return;
-    }
-
-    if (isBranch) {
-        type = isObject(node) && node.$type || void 0;
-        node = createBranch(roots, parent, node, type, key);
-        type = node.$type;
-        parents[_cache] = nodes[_cache] = node;
-        parents[_jsong] = json;
-        if (type === $ref) {
-            json[jsonkey] = clone(roots, node, type, node.value);
-            roots.hasValue = true;
-        } else {
-            nodes[_jsong] = json[jsonkey] || (json[jsonkey] = {});
-        }
-        return;
-    }
-
-    var selector = roots.errorSelector;
-    var comparator = roots.comparator;
-    var root = roots[_cache];
-    var size = isObject(node) && node.$size || 0;
-    var message = pathmap;
-
-    type = isObject(message) && message.$type || void 0;
-    message = wrapNode(message, type, Boolean(type) ? message.value : message);
-    type = type || $atom;
-
-    if (type === $error && Boolean(selector)) {
-        message = selector(requested, message);
-    }
-
-    var isDistinct = roots.isDistinct = true;
-
-    if (Boolean(comparator)) {
-        isDistinct = roots.isDistinct = !comparator(requested, node, message);
-    }
-
-    if (isDistinct) {
-        node = replaceNode(parent, node, message, key, roots.lru);
-        node = graphNode(root, parent, node, key, roots.version);
-        updateGraph(parent, size - node.$size, roots.version, roots.lru);
-
-        json[jsonkey] = clone(roots, node, type, node && node.value);
-        roots.hasValue = true;
-    }
-    nodes[_cache] = node;
-}
-
-function onEdge(pathmap, keysStack, depth, roots, parents, nodes, requested, optimized, key, keyset) {
-
-    var json;
-    var node = nodes[_cache];
-    var type = isObject(node) && node.$type || (node = void 0);
-
-    promote(roots.lru, node);
-
-    if (roots.isDistinct === true) {
-        roots.isDistinct = false;
-        setSuccessfulPaths(roots, requested, optimized);
-        if (keyset == null && !roots.hasValue && getValidKey(optimized) == null) {
-            node = clone(roots, node, type, node && node.value);
-            json = roots[_jsong];
-            json.$type = node.$type;
-            json.value = node.value;
-        }
-        roots.hasValue = true;
-    }
-}
-
-},{"104":104,"111":111,"113":113,"115":115,"116":116,"122":122,"124":124,"125":125,"126":126,"127":127,"130":130,"45":45,"49":49,"80":80,"86":86,"91":91,"95":95,"96":96}],72:[function(require,module,exports){
-module.exports = setJsonSparseAsJsonSparse;
-
-var $error = require(126);
-var $atom = require(125);
-var __version = require(45);
-
-var clone = require(85);
-var arrayClone = require(80);
-
-var options = require(111);
-var walkPathMap = require(131);
-
-var isObject = require(104);
-
-var getValidKey = require(95);
-var createBranch = require(91);
-var wrapNode = require(124);
-var replaceNode = require(115);
-var graphNode = require(96);
-var updateGraph = require(122);
-
-var setNodeIfError = require(118);
-var setSuccessfulPaths = require(116);
-
-var positions = require(113);
-var _cache = positions.cache;
-var _json = positions.json;
-
-function setJsonSparseAsJsonSparse(model, pathmaps, values, errorSelector, comparator) {
-
-    var modelRoot = model._root;
-    var modelCache = modelRoot.cache;
-    var initialVersion = modelCache[__version];
-
-    var roots = options([], model, errorSelector, comparator);
-    var index = -1;
-    var count = pathmaps.length;
-    var nodes = roots.nodes;
-    var parents = arrayClone(nodes);
-    var requested = [];
-    var optimized = arrayClone(roots.bound);
-    var keysStack = [];
-    var json = values[0];
-    var hasValue;
-
-    roots[_cache] = roots.root;
-    roots[_json] = parents[_json] = nodes[_json] = json.json || (json.json = {});
-
-    while (++index < count) {
-        var pathmap = pathmaps[index].json;
-        walkPathMap(onNode, onEdge, pathmap, keysStack, 0, roots, parents, nodes, requested, optimized);
-    }
-
-    hasValue = roots.hasValue;
-    if (hasValue) {
-        json.json = roots[_json];
-    } else {
-        delete json.json;
-    }
-
-    var newVersion = modelCache[__version];
-    var rootChangeHandler = modelRoot.onChange;
-
-    if (rootChangeHandler && initialVersion !== newVersion) {
-        rootChangeHandler();
-    }
-
-    return {
-        values: values,
-        errors: roots.errors,
-        hasValue: hasValue,
-        requestedPaths: roots.requestedPaths,
-        optimizedPaths: roots.optimizedPaths,
-        requestedMissingPaths: roots.requestedMissingPaths,
-        optimizedMissingPaths: roots.optimizedMissingPaths
-    };
-}
-
-function onNode(pathmap, roots, parents, nodes, requested, optimized, isReference, isBranch, keyArg, keyset, isKeyset) {
-
-    var key = keyArg;
-    var parent, json, jsonkey;
-
-    if (key == null) {
-        key = getValidKey(optimized);
-        if (key == null) {
-            return;
-        }
-        jsonkey = getValidKey(requested);
-        json = parents[_json];
-        parent = parents[_cache];
-    } else {
-        jsonkey = key;
-        json = nodes[_json];
-        parent = nodes[_cache];
-    }
-
-    var node = parent[key],
-        type;
-
-    if (isReference) {
-        type = isObject(node) && node.$type || void 0;
-        type = type && isBranch && "." || type;
-        node = createBranch(roots, parent, node, type, key);
-        parents[_cache] = parent;
-        nodes[_cache] = node;
-        return;
-    }
-
-    parents[_json] = json;
-
-    if (isBranch) {
-        type = isObject(node) && node.$type || void 0;
-        node = createBranch(roots, parent, node, type, key);
-        parents[_cache] = nodes[_cache] = node;
-        nodes[_json] = json[jsonkey] || (json[jsonkey] = {});
-        return;
-    }
-
-    var selector = roots.errorSelector;
-    var comparator = roots.comparator;
-    var root = roots[_cache];
-    var size = isObject(node) && node.$size || 0;
-    var message = pathmap;
-
-    type = isObject(message) && message.$type || void 0;
-    message = wrapNode(message, type, Boolean(type) ? message.value : message);
-    type = type || $atom;
-
-    if (type === $error && Boolean(selector)) {
-        message = selector(requested, message);
-    }
-
-    var isDistinct = roots.isDistinct = true;
-
-    if (Boolean(comparator)) {
-        isDistinct = roots.isDistinct = !comparator(requested, node, message);
-    }
-
-    if (isDistinct) {
-        node = replaceNode(parent, node, message, key, roots.lru);
-        node = graphNode(root, parent, node, key, roots.version);
-        updateGraph(parent, size - node.$size, roots.version, roots.lru);
-    }
-    nodes[_cache] = node;
-}
-
-function onEdge(pathmap, keysStack, depth, roots, parents, nodes, requested, optimized, key, keyset) {
-
-    var json;
-    var node = nodes[_cache];
-    var type = isObject(node) && node.$type || (node = void 0);
-
-    var isError = setNodeIfError(roots, node, type, requested);
-
-    if (isError) {
-        return;
-    }
-
-    if (roots.isDistinct === true) {
-        roots.isDistinct = false;
-        setSuccessfulPaths(roots, requested, optimized);
-        if (keyset == null && !roots.hasValue && getValidKey(optimized) == null) {
-            node = clone(roots, node, type, node && node.value);
-            json = roots[_json];
-            json.$type = node.$type;
-            json.value = node.value;
-        } else {
-            json = parents[_json];
-            json[key] = clone(roots, node, type, node && node.value);
-        }
-        roots.hasValue = true;
-    }
-}
-
-},{"104":104,"111":111,"113":113,"115":115,"116":116,"118":118,"122":122,"124":124,"125":125,"126":126,"131":131,"45":45,"80":80,"85":85,"91":91,"95":95,"96":96}],73:[function(require,module,exports){
-module.exports = setPathMapAsJsonValues;
-
-var $error = require(126);
-var $atom = require(125);
-var __version = require(45);
-
-var clone = require(85);
-var arrayClone = require(80);
-
-var options = require(111);
-var walkPathMap = require(131);
-
-var isObject = require(104);
-
-var getValidKey = require(95);
-var createBranch = require(91);
-var wrapNode = require(124);
-var replaceNode = require(115);
-var graphNode = require(96);
-var updateGraph = require(122);
-
-var setNodeIfError = require(118);
-var setSuccessfulPaths = require(116);
-
-var positions = require(113);
-var _cache = positions.cache;
-
-function setPathMapAsJsonValues(model, pathmaps, onNext, errorSelector, comparator) {
-
-    var modelRoot = model._root;
-    var modelCache = modelRoot.cache;
-    var initialVersion = modelCache[__version];
-
-    var roots = options([], model, errorSelector, comparator);
-    var index = -1;
-    var count = pathmaps.length;
-    var nodes = roots.nodes;
-    var parents = arrayClone(nodes);
-    var requested = [];
-    var optimized = arrayClone(roots.bound);
-    var keysStack = [];
-    roots[_cache] = roots.root;
-    roots.onNext = onNext;
-
-    while (++index < count) {
-        var pathmap = pathmaps[index].json;
-        walkPathMap(onNode, onEdge, pathmap, keysStack, 0, roots, parents, nodes, requested, optimized);
-    }
-
-    var newVersion = modelCache[__version];
-    var rootChangeHandler = modelRoot.onChange;
-
-    if (rootChangeHandler && initialVersion !== newVersion) {
-        rootChangeHandler();
-    }
-
-    return {
-        values: null,
-        errors: roots.errors,
-        requestedPaths: roots.requestedPaths,
-        optimizedPaths: roots.optimizedPaths,
-        requestedMissingPaths: roots.requestedMissingPaths,
-        optimizedMissingPaths: roots.optimizedMissingPaths
-    };
-}
-
-function onNode(pathmap, roots, parents, nodes, requested, optimized, isReference, isBranch, keyArg, keyset, isKeyset) {
-
-    var key = keyArg;
-    var parent;
-
-    if (key == null) {
-        key = getValidKey(optimized);
-        if (key == null) {
-            return;
-        }
-        parent = parents[_cache];
-    } else {
-        parent = nodes[_cache];
-    }
-
-    var node = parent[key],
-        type;
-
-    if (isReference) {
-        type = isObject(node) && node.$type || void 0;
-        type = type && isBranch && "." || type;
-        node = createBranch(roots, parent, node, type, key);
-        parents[_cache] = parent;
-        nodes[_cache] = node;
-        return;
-    }
-
-    if (isBranch) {
-        type = isObject(node) && node.$type || void 0;
-        node = createBranch(roots, parent, node, type, key);
-        parents[_cache] = nodes[_cache] = node;
-        return;
-    }
-
-    var selector = roots.errorSelector;
-    var comparator = roots.comparator;
-    var root = roots[_cache];
-    var size = isObject(node) && node.$size || 0;
-    var message = pathmap;
-
-    type = isObject(message) && message.$type || void 0;
-    message = wrapNode(message, type, Boolean(type) ? message.value : message);
-    type = type || $atom;
-
-    if (type === $error && Boolean(selector)) {
-        message = selector(requested, message);
-    }
-
-    var isDistinct = roots.isDistinct = true;
-
-    if (Boolean(comparator)) {
-        isDistinct = roots.isDistinct = !comparator(requested, node, message);
-    }
-
-    if (isDistinct) {
-        node = replaceNode(parent, node, message, key, roots.lru);
-        node = graphNode(root, parent, node, key, roots.version);
-        updateGraph(parent, size - node.$size, roots.version, roots.lru);
-    }
-
-    nodes[_cache] = node;
-}
-
-function onEdge(pathmap, keysStack, depth, roots, parents, nodes, requested, optimized, key, keyset) {
-
-    var node = nodes[_cache];
-    var type = isObject(node) && node.$type || (node = void 0);
-
-    var isError = setNodeIfError(roots, node, type, requested);
-
-    if (isError) {
-        return;
-    }
-
-    if (roots.isDistinct === true) {
-        roots.isDistinct = false;
-        setSuccessfulPaths(roots, requested, optimized);
-        roots.onNext({
-            path: arrayClone(requested),
-            value: clone(roots, node, type, node && node.value)
-        });
-    }
-}
-
-},{"104":104,"111":111,"113":113,"115":115,"116":116,"118":118,"122":122,"124":124,"125":125,"126":126,"131":131,"45":45,"80":80,"85":85,"91":91,"95":95,"96":96}],74:[function(require,module,exports){
-module.exports = setJsonValuesAsJsonDense;
-
-var $error = require(126);
-var $atom = require(125);
-var __version = require(45);
-
-var clone = require(85);
-var arrayClone = require(80);
-
-var options = require(111);
-var walkPathSet = require(133);
-
-var isObject = require(104);
-
-var getValidKey = require(95);
-var createBranch = require(91);
-var wrapNode = require(124);
-var invalidateNode = require(99);
-var replaceNode = require(115);
-var graphNode = require(96);
-var updateGraph = require(122);
-
-var setNodeIfMissingPath = require(119);
-var setNodeIfError = require(118);
-var setSuccessfulPaths = require(116);
-
-var positions = require(113);
-var _cache = positions.cache;
-var _json = positions.json;
-
-function setJsonValuesAsJsonDense(model, pathvalues, values, errorSelector, comparator) {
-
-    var modelRoot = model._root;
-    var modelCache = modelRoot.cache;
-    var initialVersion = modelCache[__version];
-
-    var roots = options([], model, errorSelector, comparator);
-    var index = -1;
-    var count = pathvalues.length;
-    var nodes = roots.nodes;
-    var parents = arrayClone(nodes);
-    var requested = [];
-    var optimized = arrayClone(roots.bound);
-    var json, hasValue, hasValues;
-
-    roots[_cache] = roots.root;
-
-    while (++index < count) {
-
-        json = values && values[index];
-        if (isObject(json)) {
-            roots.json = roots[_json] = parents[_json] = nodes[_json] = json.json || (json.json = {});
-        } else {
-            roots.json = roots[_json] = parents[_json] = nodes[_json] = void 0;
-        }
-
-        var pv = pathvalues[index];
-        var pathset = pv.path;
-        roots.value = pv.value;
-        roots.index = index;
-
-        walkPathSet(onNode, onEdge, pathset, 0, roots, parents, nodes, requested, optimized);
-
-        hasValue = roots.hasValue;
-        if (Boolean(hasValue)) {
-            hasValues = true;
-            if (isObject(json)) {
-                json.json = roots.json;
-            }
-            delete roots.json;
-            delete roots.hasValue;
-        } else if (isObject(json)) {
-            delete json.json;
-        }
-    }
-
-    var newVersion = modelCache[__version];
-    var rootChangeHandler = modelRoot.onChange;
-
-    if (rootChangeHandler && initialVersion !== newVersion) {
-        rootChangeHandler();
-    }
-
-    return {
-        values: values,
-        errors: roots.errors,
-        hasValue: hasValues,
-        requestedPaths: roots.requestedPaths,
-        optimizedPaths: roots.optimizedPaths,
-        requestedMissingPaths: roots.requestedMissingPaths,
-        optimizedMissingPaths: roots.optimizedMissingPaths
-    };
-}
-
-function onNode(pathset, roots, parents, nodes, requested, optimized, isReference, isBranch, keyArg, keyset, isKeyset) {
-
-    var key = keyArg;
-    var parent, json;
-
-    if (key == null) {
-        key = getValidKey(optimized);
-        if (key == null) {
-            return;
-        }
-        json = parents[_json];
-        parent = parents[_cache];
-    } else {
-        json = isKeyset && nodes[_json] || parents[_json];
-        parent = nodes[_cache];
-    }
-
-    var node = parent[key],
-        type;
-
-    if (isReference) {
-        type = isObject(node) && node.$type || void 0;
-        type = type && isBranch && "." || type;
-        node = createBranch(roots, parent, node, type, key);
-        parents[_cache] = parent;
-        nodes[_cache] = node;
-        return;
-    }
-
-    parents[_json] = json;
-
-    if (isBranch) {
-        type = isObject(node) && node.$type || void 0;
-        node = createBranch(roots, parent, node, type, key);
-        parents[_cache] = parent;
-        nodes[_cache] = node;
-        if (isKeyset && Boolean(json)) {
-            nodes[_json] = json[keyset] || (json[keyset] = {});
-        }
-        return;
-    }
-
-    var selector = roots.errorSelector;
-    var comparator = roots.comparator;
-    var root = roots[_cache];
-    var size = isObject(node) && node.$size || 0;
-    var message = roots.value;
-
-    if (message === void 0 && roots.noDataSource) {
-        invalidateNode(parent, node, key, roots.lru);
-        updateGraph(parent, size, roots.version, roots.lru);
-        node = void 0;
-    } else {
-        type = isObject(message) && message.$type || void 0;
-        message = wrapNode(message, type, Boolean(type) ? message.value : message);
-        type = type || $atom;
-
-        if (type === $error && Boolean(selector)) {
-            message = selector(requested, message);
-        }
-
-        var isDistinct = roots.isDistinct = true;
-
-        if (Boolean(comparator)) {
-            isDistinct = roots.isDistinct = !comparator(requested, node, message);
-        }
-
-        if (isDistinct) {
-            node = replaceNode(parent, node, message, key, roots.lru);
-            node = graphNode(root, parent, node, key, roots.version);
-            updateGraph(parent, size - node.$size, roots.version, roots.lru);
-        }
-    }
-
-    nodes[_cache] = node;
-}
-
-function onEdge(pathset, depth, roots, parents, nodes, requested, optimized, key, keyset) {
-
-    var json;
-    var node = nodes[_cache];
-    var type = isObject(node) && node.$type || (node = void 0);
-    var isMissingPath = setNodeIfMissingPath(roots, node, type, pathset, depth, requested, optimized);
-
-    if (isMissingPath) {
-        return;
-    }
-
-    var isError = setNodeIfError(roots, node, type, requested);
-
-    if (isError) {
-        return;
-    }
-
-    if (roots.isDistinct === true) {
-        roots.isDistinct = false;
-        setSuccessfulPaths(roots, requested, optimized);
-        if (keyset == null) {
-            roots.json = clone(roots, node, type, node && node.value);
-        } else {
-            json = parents[_json];
-            if (Boolean(json)) {
-                json[keyset] = clone(roots, node, type, node && node.value);
-            }
-        }
-        roots.hasValue = true;
-    }
-}
-
-},{"104":104,"111":111,"113":113,"115":115,"116":116,"118":118,"119":119,"122":122,"124":124,"125":125,"126":126,"133":133,"45":45,"80":80,"85":85,"91":91,"95":95,"96":96,"99":99}],75:[function(require,module,exports){
-module.exports = setJsonValuesAsJsonGraph;
-
-var $ref = require(127);
-var $error = require(126);
-var $atom = require(125);
-var __version = require(45);
-
-var clone = require(86);
-var arrayClone = require(80);
-
-var options = require(111);
-var walkPathSet = require(132);
-
-var isObject = require(104);
-
-var getValidKey = require(95);
-var createBranch = require(91);
-var wrapNode = require(124);
-var invalidateNode = require(99);
-var replaceNode = require(115);
-var graphNode = require(96);
-var updateGraph = require(122);
-
-var setNodeIfMissingPath = require(119);
-var setSuccessfulPaths = require(116);
-
-var promote = require(49);
-
-var positions = require(113);
-var _cache = positions.cache;
-var _jsong = positions.jsong;
-
-function setJsonValuesAsJsonGraph(model, pathvalues, values, errorSelector, comparator) {
-
-    var modelRoot = model._root;
-    var modelCache = modelRoot.cache;
-    var initialVersion = modelCache[__version];
-
-    var roots = options([], model, errorSelector, comparator);
-    var index = -1;
-    var count = pathvalues.length;
-    var nodes = roots.nodes;
-    var parents = arrayClone(nodes);
-    var requested = [];
-    var optimized = arrayClone(roots.bound);
-    var json = values[0];
-    var hasValue;
-
-    roots[_cache] = roots.root;
-    roots[_jsong] = parents[_jsong] = nodes[_jsong] = json.jsonGraph || (json.jsonGraph = {});
-    roots.requestedPaths = json.paths || (json.paths = roots.requestedPaths);
-
-    while (++index < count) {
-
-        var pv = pathvalues[index];
-        var pathset = pv.path;
-        roots.value = pv.value;
-
-        walkPathSet(onNode, onEdge, pathset, 0, roots, parents, nodes, requested, optimized);
-    }
-
-    hasValue = roots.hasValue;
-    if (hasValue) {
-        json.jsonGraph = roots[_jsong];
-    } else {
-        delete json.jsonGraph;
-        delete json.paths;
-    }
-
-    var newVersion = modelCache[__version];
-    var rootChangeHandler = modelRoot.onChange;
-
-    if (rootChangeHandler && initialVersion !== newVersion) {
-        rootChangeHandler();
-    }
-
-    return {
-        values: values,
-        errors: roots.errors,
-        hasValue: hasValue,
-        requestedPaths: roots.requestedPaths,
-        optimizedPaths: roots.optimizedPaths,
-        requestedMissingPaths: roots.requestedMissingPaths,
-        optimizedMissingPaths: roots.optimizedMissingPaths
-    };
-}
-
-function onNode(pathset, roots, parents, nodes, requested, optimized, isReference, isBranch, keyArg, keyset, isKeyset) {
-
-    var key = keyArg;
-    var parent, json;
-
-    if (key == null) {
-        key = getValidKey(optimized);
-        if (key == null) {
-            return;
-        }
-        json = parents[_jsong];
-        parent = parents[_cache];
-    } else {
-        json = nodes[_jsong];
-        parent = nodes[_cache];
-    }
-
-    var jsonkey = key;
-    var node = parent[key],
-        type;
-
-    if (isReference) {
-        type = isObject(node) && node.$type || void 0;
-        type = type && isBranch && "." || type;
-        node = createBranch(roots, parent, node, type, key);
-        parents[_cache] = parent;
-        nodes[_cache] = node;
-        parents[_jsong] = json;
-        if (type === $ref) {
-            json[jsonkey] = clone(roots, node, type, node.value);
-            roots.hasValue = true;
-        } else {
-            nodes[_jsong] = json[jsonkey] || (json[jsonkey] = {});
-        }
-        return;
-    }
-
-    if (isBranch) {
-        type = isObject(node) && node.$type || void 0;
-        node = createBranch(roots, parent, node, type, key);
-        type = node.$type;
-        parents[_cache] = parent;
-        nodes[_cache] = node;
-        parents[_jsong] = json;
-        if (type === $ref) {
-            json[jsonkey] = clone(roots, node, type, node.value);
-            roots.hasValue = true;
-        } else {
-            nodes[_jsong] = json[jsonkey] || (json[jsonkey] = {});
-        }
-        return;
-    }
-
-    var selector = roots.errorSelector;
-    var comparator = roots.comparator;
-    var root = roots[_cache];
-    var size = isObject(node) && node.$size || 0;
-    var message = roots.value;
-
-    if (message === void 0 && roots.noDataSource) {
-        invalidateNode(parent, node, key, roots.lru);
-        updateGraph(parent, size, roots.version, roots.lru);
-        node = void 0;
-    } else {
-        type = isObject(message) && message.$type || void 0;
-        message = wrapNode(message, type, Boolean(type) ? message.value : message);
-        type = type || $atom;
-
-        if (type === $error && Boolean(selector)) {
-            message = selector(requested, message);
-        }
-
-        var isDistinct = roots.isDistinct = true;
-
-        if (Boolean(comparator)) {
-            isDistinct = roots.isDistinct = !comparator(requested, node, message);
-        }
-
-        if (isDistinct) {
-            node = replaceNode(parent, node, message, key, roots.lru);
-            node = graphNode(root, parent, node, key, roots.version);
-            updateGraph(parent, size - node.$size, roots.version, roots.lru);
-
-            json[jsonkey] = clone(roots, node, type, node && node.value);
-            roots.hasValue = true;
-        }
-    }
-    nodes[_cache] = node;
-}
-
-function onEdge(pathset, depth, roots, parents, nodes, requested, optimized, key, keyset) {
-
-    var json;
-    var node = nodes[_cache];
-    var type = isObject(node) && node.$type || (node = void 0);
-    var isMissingPath = setNodeIfMissingPath(roots, node, type, pathset, depth, requested, optimized);
-
-    if (isMissingPath) {
-        return;
-    }
-
-    promote(roots.lru, node);
-
-    if (roots.isDistinct === true) {
-        roots.isDistinct = false;
-        setSuccessfulPaths(roots, requested, optimized);
-        if (keyset == null && !roots.hasValue && getValidKey(optimized) == null) {
-            node = clone(roots, node, type, node && node.value);
-            json = roots[_jsong];
-            json.$type = node.$type;
-            json.value = node.value;
-        }
-        roots.hasValue = true;
-    }
-}
-
-},{"104":104,"111":111,"113":113,"115":115,"116":116,"119":119,"122":122,"124":124,"125":125,"126":126,"127":127,"132":132,"45":45,"49":49,"80":80,"86":86,"91":91,"95":95,"96":96,"99":99}],76:[function(require,module,exports){
-module.exports = setJsonValuesAsJsonSparse;
-
-var $error = require(126);
-var $atom = require(125);
-var __version = require(45);
-
-var clone = require(85);
-var arrayClone = require(80);
-
-var options = require(111);
-var walkPathSet = require(133);
-
-var isObject = require(104);
-
-var getValidKey = require(95);
-var createBranch = require(91);
-var wrapNode = require(124);
-var invalidateNode = require(99);
-var replaceNode = require(115);
-var graphNode = require(96);
-var updateGraph = require(122);
-
-var setNodeIfMissingPath = require(119);
-var setNodeIfError = require(118);
-var setSuccessfulPaths = require(116);
-
-var positions = require(113);
-var _cache = positions.cache;
-var _json = positions.json;
-
-function setJsonValuesAsJsonSparse(model, pathvalues, values, errorSelector, comparator) {
-
-    var modelRoot = model._root;
-    var modelCache = modelRoot.cache;
-    var initialVersion = modelCache[__version];
-
-    var roots = options([], model, errorSelector, comparator);
-    var index = -1;
-    var count = pathvalues.length;
-    var nodes = roots.nodes;
-    var parents = arrayClone(nodes);
-    var requested = [];
-    var optimized = arrayClone(roots.bound);
-    var json = values[0];
-    var hasValue;
-
-    roots[_cache] = roots.root;
-    roots[_json] = parents[_json] = nodes[_json] = json.json || (json.json = {});
-
-    while (++index < count) {
-
-        var pv = pathvalues[index];
-        var pathset = pv.path;
-        roots.value = pv.value;
-
-        walkPathSet(onNode, onEdge, pathset, 0, roots, parents, nodes, requested, optimized);
-    }
-
-    hasValue = roots.hasValue;
-    if (hasValue) {
-        json.json = roots[_json];
-    } else {
-        delete json.json;
-    }
-
-    var newVersion = modelCache[__version];
-    var rootChangeHandler = modelRoot.onChange;
-
-    if (rootChangeHandler && initialVersion !== newVersion) {
-        rootChangeHandler();
-    }
-
-    return {
-        values: values,
-        errors: roots.errors,
-        hasValue: hasValue,
-        requestedPaths: roots.requestedPaths,
-        optimizedPaths: roots.optimizedPaths,
-        requestedMissingPaths: roots.requestedMissingPaths,
-        optimizedMissingPaths: roots.optimizedMissingPaths
-    };
-}
-
-function onNode(pathset, roots, parents, nodes, requested, optimized, isReference, isBranch, keyArg, keyset, isKeyset) {
-
-    var key = keyArg;
-    var parent, json, jsonkey;
-
-    if (key == null) {
-        key = getValidKey(optimized);
-        if (key == null) {
-            return;
-        }
-        jsonkey = getValidKey(requested);
-        json = parents[_json];
-        parent = parents[_cache];
-    } else {
-        jsonkey = key;
-        json = nodes[_json];
-        parent = nodes[_cache];
-    }
-
-    var node = parent[key],
-        type;
-
-    if (isReference) {
-        type = isObject(node) && node.$type || void 0;
-        type = type && isBranch && "." || type;
-        node = createBranch(roots, parent, node, type, key);
-        parents[_cache] = parent;
-        nodes[_cache] = node;
-        return;
-    }
-
-    parents[_json] = json;
-
-    if (isBranch) {
-        type = isObject(node) && node.$type || void 0;
-        node = createBranch(roots, parent, node, type, key);
-        parents[_cache] = parent;
-        nodes[_cache] = node;
-        nodes[_json] = json[jsonkey] || (json[jsonkey] = {});
-        return;
-    }
-
-    var selector = roots.errorSelector;
-    var comparator = roots.comparator;
-    var root = roots[_cache];
-    var size = isObject(node) && node.$size || 0;
-    var message = roots.value;
-
-    if (message === void 0 && roots.noDataSource) {
-        invalidateNode(parent, node, key, roots.lru);
-        updateGraph(parent, size, roots.version, roots.lru);
-        node = void 0;
-    } else {
-        type = isObject(message) && message.$type || void 0;
-        message = wrapNode(message, type, Boolean(type) ? message.value : message);
-        type = type || $atom;
-
-        if (type === $error && Boolean(selector)) {
-            message = selector(requested, message);
-        }
-
-        var isDistinct = roots.isDistinct = true;
-
-        if (Boolean(comparator)) {
-            isDistinct = roots.isDistinct = !comparator(requested, node, message);
-        }
-
-        if (isDistinct) {
-            node = replaceNode(parent, node, message, key, roots.lru);
-            node = graphNode(root, parent, node, key, roots.version);
-            updateGraph(parent, size - node.$size, roots.version, roots.lru);
-        }
-    }
-    nodes[_cache] = node;
-}
-
-function onEdge(pathset, depth, roots, parents, nodes, requested, optimized, key, keyset) {
-
-    var json;
-    var node = nodes[_cache];
-    var type = isObject(node) && node.$type || (node = void 0);
-    var isMissingPath = setNodeIfMissingPath(roots, node, type, pathset, depth, requested, optimized);
-
-    if (isMissingPath) {
-        return;
-    }
-
-    var isError = setNodeIfError(roots, node, type, requested);
-
-    if (isError) {
-        return;
-    }
-
-    if (roots.isDistinct === true) {
-        roots.isDistinct = false;
-        setSuccessfulPaths(roots, requested, optimized);
-        if (keyset == null && !roots.hasValue && getValidKey(optimized) == null) {
-            node = clone(roots, node, type, node && node.value);
-            json = roots[_json];
-            json.$type = node.$type;
-            json.value = node.value;
-        } else {
-            json = parents[_json];
-            json[key] = clone(roots, node, type, node && node.value);
-        }
-        roots.hasValue = true;
-    }
-}
-
-},{"104":104,"111":111,"113":113,"115":115,"116":116,"118":118,"119":119,"122":122,"124":124,"125":125,"126":126,"133":133,"45":45,"80":80,"85":85,"91":91,"95":95,"96":96,"99":99}],77:[function(require,module,exports){
-module.exports = setJsonValuesAsJsonValues;
-
-var $error = require(126);
-var $atom = require(125);
-var __version = require(45);
-
-var clone = require(85);
-var arrayClone = require(80);
-
-var options = require(111);
-var walkPathSet = require(133);
-
-var isObject = require(104);
-
-var getValidKey = require(95);
-var createBranch = require(91);
-var wrapNode = require(124);
-var invalidateNode = require(99);
-var replaceNode = require(115);
-var graphNode = require(96);
-var updateGraph = require(122);
-
-var setNodeIfMissingPath = require(119);
-var setNodeIfError = require(118);
-var setSuccessfulPaths = require(116);
-
-var positions = require(113);
-var _cache = positions.cache;
-
-/**
- * TODO: CR More comments.
- * Sets a list of PathValues into the cache and calls the onNext for each value.
- * @private
- */
-function setJsonValuesAsJsonValues(model, pathvalues, onNext, errorSelector, comparator) {
-
-    var modelRoot = model._root;
-    var modelCache = modelRoot.cache;
-    var initialVersion = modelCache[__version];
-
-    // TODO: CR Rename options to setup set state
-    var roots = options([], model, errorSelector, comparator);
-    var pathsIndex = -1;
-    var pathsCount = pathvalues.length;
-    var nodes = roots.nodes;
-    var parents = arrayClone(nodes);
     var requestedPath = [];
-    var optimizedPath = arrayClone(roots.bound);
+    var optimizedPath = [];
+    var requestedPaths = [];
+    var optimizedPaths = [];
+    var jsonGraphEnvelopeIndex = -1;
+    var jsonGraphEnvelopeCount = jsonGraphEnvelopes.length;
 
-    // TODO: CR Rename node array indicies
-    roots[_cache] = roots.root;
-    roots.onNext = onNext;
+    while (++jsonGraphEnvelopeIndex < jsonGraphEnvelopeCount) {
 
-    while (++pathsIndex < pathsCount) {
-        var pv = pathvalues[pathsIndex];
-        var pathset = pv.path;
-        roots.value = pv.value;
-        walkPathSet(onNode, onValueType, pathset, 0, roots, parents, nodes, requestedPath, optimizedPath);
+        var jsonGraphEnvelope = jsonGraphEnvelopes[jsonGraphEnvelopeIndex];
+        var paths = jsonGraphEnvelope.paths;
+        var jsonGraph = jsonGraphEnvelope.jsonGraph;
+
+        var pathIndex = -1;
+        var pathCount = paths.length;
+
+        while (++pathIndex < pathCount) {
+
+            var path = paths[pathIndex];
+            optimizedPath.index = 0;
+
+            setJSONGraphPathSet(
+                path, 0,
+                cache, cache, cache,
+                jsonGraph, jsonGraph, jsonGraph,
+                requestedPaths, optimizedPaths, requestedPath, optimizedPath,
+                version, expired, lru, comparator, errorSelector
+            );
+        }
     }
 
-    var newVersion = modelCache[__version];
+    var newVersion = cache[__version];
     var rootChangeHandler = modelRoot.onChange;
 
-    if (rootChangeHandler && initialVersion !== newVersion) {
+    if (isFunction(rootChangeHandler) && initialVersion !== newVersion) {
         rootChangeHandler();
     }
 
-    return {
-        values: null,
-        errors: roots.errors,
-        requestedPaths: roots.requestedPaths,
-        optimizedPaths: roots.optimizedPaths,
-        requestedMissingPaths: roots.requestedMissingPaths,
-        optimizedMissingPaths: roots.optimizedMissingPaths
-    };
+    return [requestedPaths, optimizedPaths];
+};
+
+/* eslint-disable no-constant-condition */
+function setJSONGraphPathSet(
+    path, depth, root, parent, node,
+    messageRoot, messageParent, message,
+    requestedPaths, optimizedPaths, requestedPath, optimizedPath,
+    version, expired, lru, comparator, errorSelector) {
+
+    var note = {};
+    var branch = depth < path.length - 1;
+    var keySet = path[depth];
+    var key = iterateKeySet(keySet, note);
+    var optimizedIndex = optimizedPath.index;
+
+    do {
+        var results = setNode(
+            root, parent, node, messageRoot, messageParent, message,
+            key, branch, false, requestedPath, optimizedPath,
+            version, expired, lru, comparator, errorSelector
+        );
+        requestedPath[depth] = key;
+        requestedPath.index = depth;
+        optimizedPath[optimizedPath.index++] = key;
+        var nextNode = results[0];
+        var nextParent = results[1];
+        if (nextNode) {
+            if (branch) {
+                setJSONGraphPathSet(
+                    path, depth + 1, root, nextParent, nextNode,
+                    messageRoot, results[3], results[2],
+                    requestedPaths, optimizedPaths, requestedPath, optimizedPath,
+                    version, expired, lru, comparator, errorSelector
+                );
+            } else {
+                promote(lru, nextNode);
+                requestedPaths.push(requestedPath.slice(0, requestedPath.index + 1));
+                optimizedPaths.push(optimizedPath.slice(0, optimizedPath.index));
+            }
+        }
+        key = iterateKeySet(keySet, note);
+        if (note.done) {
+            break;
+        }
+        optimizedPath.index = optimizedIndex;
+    } while (true);
+}
+/* eslint-enable */
+
+function setReference(
+    root, node, messageRoot, message, requestedPath, optimizedPath,
+    version, expired, lru, comparator, errorSelector) {
+
+    var reference = node.value;
+    optimizedPath.splice(0, optimizedPath.length);
+    optimizedPath.push.apply(optimizedPath, reference);
+
+    if (isExpired(node)) {
+        optimizedPath.index = reference.length;
+        expireNode(node, expired, lru);
+        return [undefined, root, message, messageRoot];
+    }
+
+    promote(lru, node);
+
+    var index = 0;
+    var container = node;
+    var count = reference.length - 1;
+    var parent = node = root;
+    var messageParent = message = messageRoot;
+
+    do {
+        var key = reference[index];
+        var branch = index < count;
+        var results = setNode(
+            root, parent, node, messageRoot, messageParent, message,
+            key, branch, true, requestedPath, optimizedPath,
+            version, expired, lru, comparator, errorSelector
+        );
+        node = results[0];
+        if (isPrimitive(node)) {
+            optimizedPath.index = index;
+            return results;
+        }
+        parent = results[1];
+        message = results[2];
+        messageParent = results[3];
+    } while (index++ < count);
+
+    optimizedPath.index = index;
+
+    if (container[__context] !== node) {
+        var backRefs = node[__refsLength] || 0;
+        node[__refsLength] = backRefs + 1;
+        node[__ref + backRefs] = container;
+        container[__context] = node;
+        container[__refIndex] = backRefs;
+    }
+
+    return [node, parent, message, messageParent];
 }
 
-// TODO: CR
-// - comment parents and nodes initial state
-// - comment parents and nodes mutation
+function setNode(
+    root, parent, node, messageRoot, messageParent, message,
+    key, branch, reference, requestedPath, optimizedPath,
+    version, expired, lru, comparator, errorSelector) {
 
-function onNode(pathset, roots, parents, nodes, requested, optimized, isReference, isBranch, keyArg, keyset, isKeyset) {
+    var type = node.$type;
 
-    var key = keyArg;
-    var parent;
+    while (type === $ref) {
+
+        var results = setReference(
+            root, node, messageRoot, message, requestedPath, optimizedPath,
+            version, expired, lru, comparator, errorSelector
+        );
+
+        node = results[0];
+
+        if (isPrimitive(node)) {
+            return results;
+        }
+
+        parent = results[1];
+        message = results[2];
+        messageParent = results[3];
+        type = node.$type;
+    }
+
+    if (type !== void 0) {
+        return [node, parent, message, messageParent];
+    }
 
     if (key == null) {
-        key = getValidKey(optimized);
-        if (key == null) {
-            return;
+        if (branch) {
+            throw new Error("`null` is not allowed in branch key positions.");
+        } else if (node) {
+            key = node[__key];
         }
-        parent = parents[_cache];
     } else {
-        parent = nodes[_cache];
+        parent = node;
+        messageParent = message;
+        node = parent[key];
+        message = messageParent && messageParent[key];
     }
 
-    var node = parent[key],
-        type;
+    node = mergeJSONGraphNode(
+        parent, node, message, key, requestedPath, optimizedPath,
+        version, expired, lru, comparator, errorSelector
+    );
 
-    if (isReference) {
-        type = isObject(node) && node.$type || void 0;
-        type = type && isBranch && "." || type;
-        node = createBranch(roots, parent, node, type, key);
-        parents[_cache] = parent;
-        nodes[_cache] = node;
-        return;
-    }
-
-    if (isBranch) {
-        type = isObject(node) && node.$type || void 0;
-        node = createBranch(roots, parent, node, type, key);
-        parents[_cache] = parent;
-        nodes[_cache] = node;
-        return;
-    }
-
-    var selector = roots.errorSelector;
-    var comparator = roots.comparator;
-    var root = roots[_cache];
-    var size = isObject(node) && node.$size || 0;
-    var message = roots.value;
-
-    if (message === void 0 && roots.noDataSource) {
-        invalidateNode(parent, node, key, roots.lru);
-        updateGraph(parent, size, roots.version, roots.lru);
-        node = void 0;
-    } else {
-        type = isObject(message) && message.$type || void 0;
-        message = wrapNode(message, type, Boolean(type) ? message.value : message);
-        type = type || $atom;
-
-        if (type === $error && Boolean(selector)) {
-            message = selector(requested, message);
-        }
-
-        var isDistinct = roots.isDistinct = true;
-
-        if (Boolean(comparator)) {
-            isDistinct = roots.isDistinct = !comparator(requested, node, message);
-        }
-
-        if (isDistinct) {
-            node = replaceNode(parent, node, message, key, roots.lru);
-            node = graphNode(root, parent, node, key, roots.version);
-            updateGraph(parent, size - node.$size, roots.version, roots.lru);
-        }
-    }
-    nodes[_cache] = node;
+    return [node, parent, message, messageParent];
 }
 
-// TODO: CR describe onValueType's job
-function onValueType(pathset, depth, roots, parents, nodes, requested, optimized, key, keyset) {
+},{"102":102,"103":103,"119":119,"146":146,"34":34,"37":37,"43":43,"44":44,"45":45,"47":47,"51":51,"87":87,"93":93,"95":95,"97":97}],78:[function(require,module,exports){
+var __key = require(37);
+var __ref = require(44);
+var __prefix = require(41);
+var __parent = require(40);
+var __context = require(34);
+var __version = require(47);
+var __refIndex = require(43);
+var __refsLength = require(45);
 
-    var node = nodes[_cache];
-    var type = isObject(node) && node.$type || (node = void 0);
-    var isMissingPath = setNodeIfMissingPath(roots, node, type, pathset, depth, requested, optimized);
+var $ref = require(119);
 
-    if (isMissingPath) {
-        return;
+var getBoundValue = require(14);
+
+var isArray = Array.isArray;
+var promote = require(51);
+var hasOwn = require(92);
+var isObject = require(100);
+var isExpired = require(96);
+var isFunction = require(97);
+var isPrimitive = require(102);
+var expireNode = require(87);
+var incrementVersion = require(93);
+var mergeValueOrInsertBranch = require(104);
+
+/**
+ * Sets a list of PathMaps into a JSON Graph.
+ * @function
+ * @param {Object} model - the Model for which to insert the PathMaps.
+ * @param {Array.<PathMapEnvelope>} pathMapEnvelopes - the a list of @PathMapEnvelopes to set.
+ * @return {Array.<Path>} - a list of optimized paths for the successfully set values.
+ */
+
+module.exports = function setPathMaps(model, pathMapEnvelopes, x, errorSelector, comparator) {
+
+    var modelRoot = model._root;
+    var lru = modelRoot;
+    var expired = modelRoot.expired;
+    var version = incrementVersion();
+    var bound = model._path;
+    var cache = modelRoot.cache;
+    var node = bound.length ? getBoundValue(model, bound).value : cache;
+    var parent = node[__parent] || cache;
+    var initialVersion = cache[__version];
+
+    var requestedPath = [];
+    var requestedPaths = [];
+    var optimizedPaths = [];
+    var optimizedIndex = bound.length;
+    var pathMapIndex = -1;
+    var pathMapCount = pathMapEnvelopes.length;
+
+    while (++pathMapIndex < pathMapCount) {
+
+        var pathMapEnvelope = pathMapEnvelopes[pathMapIndex];
+        var optimizedPath = bound.slice(0);
+        optimizedPath.index = optimizedIndex;
+
+        setPathMap(
+            pathMapEnvelope.json, 0, cache, parent, node,
+            requestedPaths, optimizedPaths, requestedPath, optimizedPath,
+            version, expired, lru, comparator, errorSelector
+        );
     }
 
-    var isError = setNodeIfError(roots, node, type, requested);
+    var newVersion = cache[__version];
+    var rootChangeHandler = modelRoot.onChange;
 
-    if (isError) {
-        return;
+    if (isFunction(rootChangeHandler) && initialVersion !== newVersion) {
+        rootChangeHandler();
     }
 
-    if (roots.isDistinct === true) {
-        // TODO: CR Explain what's happening here.
-        roots.isDistinct = false;
-        setSuccessfulPaths(roots, requested, optimized);
-        roots.onNext({
-            path: arrayClone(requested),
-            value: clone(roots, node, type, node && node.value)
+    return [requestedPaths, optimizedPaths];
+};
+
+/* eslint-disable no-constant-condition */
+function setPathMap(
+    pathMap, depth, root, parent, node,
+    requestedPaths, optimizedPaths, requestedPath, optimizedPath,
+    version, expired, lru, comparator, errorSelector) {
+
+    var keys = getKeys(pathMap);
+
+    if (keys && keys.length) {
+
+        var keyIndex = 0;
+        var keyCount = keys.length;
+        var optimizedIndex = optimizedPath.index;
+
+        do {
+            var key = keys[keyIndex];
+            var child = pathMap[key];
+            var branch = isObject(child) && !child.$type;
+            var results = setNode(
+                root, parent, node, key, child,
+                branch, false, requestedPath, optimizedPath,
+                version, expired, lru, comparator, errorSelector
+            );
+            requestedPath[depth] = key;
+            requestedPath.index = depth;
+            optimizedPath[optimizedPath.index++] = key;
+            var nextNode = results[0];
+            var nextParent = results[1];
+            if (nextNode) {
+                if (branch) {
+                    setPathMap(
+                        child, depth + 1,
+                        root, nextParent, nextNode,
+                        requestedPaths, optimizedPaths, requestedPath, optimizedPath,
+                        version, expired, lru, comparator, errorSelector
+                    );
+                } else {
+                    promote(lru, nextNode);
+                    requestedPaths.push(requestedPath.slice(0, requestedPath.index + 1));
+                    optimizedPaths.push(optimizedPath.slice(0, optimizedPath.index));
+                }
+            }
+            if (++keyIndex >= keyCount) {
+                break;
+            }
+            optimizedPath.index = optimizedIndex;
+        } while (true);
+    }
+}
+/* eslint-enable */
+
+function setReference(
+    value, root, node, requestedPath, optimizedPath,
+    version, expired, lru, comparator, errorSelector) {
+
+    var reference = node.value;
+    optimizedPath.splice(0, optimizedPath.length);
+    optimizedPath.push.apply(optimizedPath, reference);
+
+    if (isExpired(node)) {
+        optimizedPath.index = reference.length;
+        expireNode(node, expired, lru);
+        return [undefined, root];
+    }
+
+    promote(lru, node);
+
+    var container = node;
+    var parent = root;
+
+    node = node[__context];
+
+    if (node != null) {
+        parent = node[__parent] || root;
+        optimizedPath.index = reference.length;
+    } else {
+
+        var index = 0;
+        var count = reference.length - 1;
+
+        parent = node = root;
+
+        do {
+            var key = reference[index];
+            var branch = index < count;
+            var results = setNode(
+                root, parent, node, key, value,
+                branch, true, requestedPath, optimizedPath,
+                version, expired, lru, comparator, errorSelector
+            );
+            node = results[0];
+            if (isPrimitive(node)) {
+                optimizedPath.index = index;
+                return results;
+            }
+            parent = results[1];
+        } while (index++ < count);
+
+        optimizedPath.index = index;
+
+        if (container[__context] !== node) {
+            var backRefs = node[__refsLength] || 0;
+            node[__refsLength] = backRefs + 1;
+            node[__ref + backRefs] = container;
+            container[__context] = node;
+            container[__refIndex] = backRefs;
+        }
+    }
+
+    return [node, parent];
+}
+
+function setNode(
+    root, parent, node, key, value,
+    branch, reference, requestedPath, optimizedPath,
+    version, expired, lru, comparator, errorSelector) {
+
+    var type = node.$type;
+
+    while (type === $ref) {
+
+        var results = setReference(
+            value, root, node, requestedPath, optimizedPath,
+            version, expired, lru, comparator, errorSelector);
+
+        node = results[0];
+
+        if (isPrimitive(node)) {
+            return results;
+        }
+
+        parent = results[1];
+        type = node && node.$type;
+    }
+
+    if (type !== void 0) {
+        return [node, parent];
+    }
+
+    if (key == null) {
+        if (branch) {
+            throw new Error("`null` is not allowed in branch key positions.");
+        } else if (node) {
+            key = node[__key];
+        }
+    } else {
+        parent = node;
+        node = parent[key];
+    }
+
+    node = mergeValueOrInsertBranch(
+        parent, node, key, value,
+        branch, reference, requestedPath, optimizedPath,
+        version, expired, lru, comparator, errorSelector
+    );
+
+    return [node, parent];
+}
+
+function getKeys(pathMap) {
+
+    if (isObject(pathMap) && !pathMap.$type) {
+        var keys = [];
+        var itr = 0;
+        if (isArray(pathMap)) {
+            keys[itr++] = "length";
+        }
+        for (var key in pathMap) {
+            if (key[0] === __prefix || key[0] === "$" || !hasOwn(pathMap, key)) {
+                continue;
+            }
+            keys[itr++] = key;
+        }
+        return keys;
+    }
+
+    return void 0;
+}
+
+},{"100":100,"102":102,"104":104,"119":119,"14":14,"34":34,"37":37,"40":40,"41":41,"43":43,"44":44,"45":45,"47":47,"51":51,"87":87,"92":92,"93":93,"96":96,"97":97}],79:[function(require,module,exports){
+var __key = require(37);
+var __ref = require(44);
+var __parent = require(40);
+var __context = require(34);
+var __version = require(47);
+var __refIndex = require(43);
+var __refsLength = require(45);
+
+var $ref = require(119);
+
+var getBoundValue = require(14);
+
+var promote = require(51);
+var isExpired = require(96);
+var isFunction = require(97);
+var isPrimitive = require(102);
+var expireNode = require(87);
+var iterateKeySet = require(146).iterateKeySet;
+var incrementVersion = require(93);
+var mergeValueOrInsertBranch = require(104);
+
+/**
+ * Sets a list of PathValues into a JSON Graph.
+ * @function
+ * @param {Object} model - the Model for which to insert the PathValues.
+ * @param {Array.<PathValue>} pathValues - the PathValues to set.
+ * @return {Array.<Path>} - a list of optimized paths for the successfully set values.
+ */
+
+module.exports = function setPathValues(model, pathValues, x, errorSelector, comparator) {
+
+    var modelRoot = model._root;
+    var lru = modelRoot;
+    var expired = modelRoot.expired;
+    var version = incrementVersion();
+    var bound = model._path;
+    var cache = modelRoot.cache;
+    var node = bound.length ? getBoundValue(model, bound).value : cache;
+    var parent = node[__parent] || cache;
+    var initialVersion = cache[__version];
+
+    var requestedPath = [];
+    var requestedPaths = [];
+    var optimizedPaths = [];
+    var optimizedIndex = bound.length;
+    var pathValueIndex = -1;
+    var pathValueCount = pathValues.length;
+
+    while (++pathValueIndex < pathValueCount) {
+
+        var pathValue = pathValues[pathValueIndex];
+        var path = pathValue.path;
+        var value = pathValue.value;
+        var optimizedPath = bound.slice(0);
+        optimizedPath.index = optimizedIndex;
+
+        setPathSet(
+            value, path, 0, cache, parent, node,
+            requestedPaths, optimizedPaths, requestedPath, optimizedPath,
+            version, expired, lru, comparator, errorSelector
+        );
+    }
+
+    var newVersion = cache[__version];
+    var rootChangeHandler = modelRoot.onChange;
+
+    if (isFunction(rootChangeHandler) && initialVersion !== newVersion) {
+        rootChangeHandler();
+    }
+
+    return [requestedPaths, optimizedPaths];
+};
+
+/* eslint-disable no-constant-condition */
+function setPathSet(
+    value, path, depth, root, parent, node,
+    requestedPaths, optimizedPaths, requestedPath, optimizedPath,
+    version, expired, lru, comparator, errorSelector) {
+
+    var note = {};
+    var branch = depth < path.length - 1;
+    var keySet = path[depth];
+    var key = iterateKeySet(keySet, note);
+    var optimizedIndex = optimizedPath.index;
+
+    do {
+        var results = setNode(
+            root, parent, node, key, value,
+            branch, false, requestedPath, optimizedPath,
+            version, expired, lru, comparator, errorSelector
+        );
+        requestedPath[depth] = key;
+        requestedPath.index = depth;
+        optimizedPath[optimizedPath.index++] = key;
+        var nextNode = results[0];
+        var nextParent = results[1];
+        if (nextNode) {
+            if (branch) {
+                setPathSet(
+                    value, path, depth + 1,
+                    root, nextParent, nextNode,
+                    requestedPaths, optimizedPaths, requestedPath, optimizedPath,
+                    version, expired, lru, comparator, errorSelector
+                );
+            } else {
+                promote(lru, nextNode);
+                requestedPaths.push(requestedPath.slice(0, requestedPath.index + 1));
+                optimizedPaths.push(optimizedPath.slice(0, optimizedPath.index));
+            }
+        }
+        key = iterateKeySet(keySet, note);
+        if (note.done) {
+            break;
+        }
+        optimizedPath.index = optimizedIndex;
+    } while (true);
+}
+/* eslint-enable */
+
+function setReference(
+    value, root, node, requestedPath, optimizedPath,
+    version, expired, lru, comparator, errorSelector) {
+
+    var reference = node.value;
+    optimizedPath.splice(0, optimizedPath.length);
+    optimizedPath.push.apply(optimizedPath, reference);
+
+    if (isExpired(node)) {
+        optimizedPath.index = reference.length;
+        expireNode(node, expired, lru);
+        return [undefined, root];
+    }
+
+    promote(lru, node);
+
+    var container = node;
+    var parent = root;
+
+    node = node[__context];
+
+    if (node != null) {
+        parent = node[__parent] || root;
+        optimizedPath.index = reference.length;
+    } else {
+
+        var index = 0;
+        var count = reference.length - 1;
+
+        parent = node = root;
+
+        do {
+            var key = reference[index];
+            var branch = index < count;
+            var results = setNode(
+                root, parent, node, key, value,
+                branch, true, requestedPath, optimizedPath,
+                version, expired, lru, comparator, errorSelector
+            );
+            node = results[0];
+            if (isPrimitive(node)) {
+                optimizedPath.index = index;
+                return results;
+            }
+            parent = results[1];
+        } while (index++ < count);
+
+        optimizedPath.index = index;
+
+        if (container[__context] !== node) {
+            var backRefs = node[__refsLength] || 0;
+            node[__refsLength] = backRefs + 1;
+            node[__ref + backRefs] = container;
+            container[__context] = node;
+            container[__refIndex] = backRefs;
+        }
+    }
+
+    return [node, parent];
+}
+
+function setNode(
+    root, parent, node, key, value,
+    branch, reference, requestedPath, optimizedPath,
+    version, expired, lru, comparator, errorSelector) {
+
+    var type = node.$type;
+
+    while (type === $ref) {
+
+        var results = setReference(
+            value, root, node, requestedPath, optimizedPath,
+            version, expired, lru, comparator, errorSelector
+        );
+
+        node = results[0];
+
+        if (isPrimitive(node)) {
+            return results;
+        }
+
+        parent = results[1];
+        type = node.$type;
+    }
+
+    if (type !== void 0) {
+        return [node, parent];
+    }
+
+    if (key == null) {
+        if (branch) {
+            throw new Error("`null` is not allowed in branch key positions.");
+        } else if (node) {
+            key = node[__key];
+        }
+    } else {
+        parent = node;
+        node = parent[key];
+    }
+
+    node = mergeValueOrInsertBranch(
+        parent, node, key, value,
+        branch, reference, requestedPath, optimizedPath,
+        version, expired, lru, comparator, errorSelector
+    );
+
+    return [node, parent];
+}
+
+},{"102":102,"104":104,"119":119,"14":14,"146":146,"34":34,"37":37,"40":40,"43":43,"44":44,"45":45,"47":47,"51":51,"87":87,"93":93,"96":96,"97":97}],80:[function(require,module,exports){
+var jsong = require(133);
+var ModelResponse = require(65);
+var isPathValue = require(101);
+
+module.exports = function setValue(pathArg, valueArg) {
+    var value = isPathValue(pathArg) ? pathArg : jsong.pathValue(pathArg, valueArg);
+    var pathIdx = 0;
+    var path = value.path;
+    var pathLen = path.length;
+    while (++pathIdx < pathLen) {
+        if (typeof path[pathIdx] === "object") {
+            /* eslint-disable no-loop-func */
+            return new ModelResponse(function(o) {
+                o.onError(new Error("Paths must be simple paths"));
+            });
+            /* eslint-enable no-loop-func */
+        }
+    }
+    var self = this;
+    return new ModelResponse(function(obs) {
+        return self._set(value).subscribe(function(data) {
+            var curr = data.json;
+            var depth = -1;
+            var length = path.length;
+
+            while (curr && ++depth < length) {
+                curr = curr[path[depth]];
+            }
+            obs.onNext(curr);
+        }, function(err) {
+            obs.onError(err);
+        }, function() {
+            obs.onCompleted();
         });
-    }
-}
+    });
+};
 
-},{"104":104,"111":111,"113":113,"115":115,"116":116,"118":118,"119":119,"122":122,"124":124,"125":125,"126":126,"133":133,"45":45,"80":80,"85":85,"91":91,"95":95,"96":96,"99":99}],78:[function(require,module,exports){
-var $error = require(126);
-var pathSyntax = require(160);
-var getType = require(94);
-var isObject = require(104);
-var isPathValue = require(105);
-var setJsonValuesAsJsonDense = require(74);
+},{"101":101,"133":133,"65":65}],81:[function(require,module,exports){
+var pathSyntax = require(137);
+var isPathValue = require(101);
+var setPathValues = require(79);
 
 module.exports = function setValueSync(pathArg, valueArg, errorSelectorArg, comparatorArg) {
 
@@ -6532,83 +5365,26 @@ module.exports = function setValueSync(pathArg, valueArg, errorSelectorArg, comp
     }
 
     if (this._syncCheck("setValueSync")) {
-
-        var json = {};
-        var boxed = this._boxed;
-        var treatErrorsAsValues = this._treatErrorsAsValues;
-
-        this._boxed = true;
-        this._treatErrorsAsValues = true;
-
-        setJsonValuesAsJsonDense(this, [value], [json], errorSelector, comparator);
-
-        this._boxed = boxed;
-        this._treatErrorsAsValues = treatErrorsAsValues;
-
-        json = json.json;
-
-        if (isObject(json) === false) {
-            return json;
-        } else if (treatErrorsAsValues || getType(json) !== $error) {
-            if (boxed) {
-                return json;
-            } else {
-                return json.value;
-            }
-        } else if (boxed) {
-            throw json;
-        } else {
-            throw json.value;
-        }
+        setPathValues(this, [value]);
+        return this._getValueSync(this, value.path).value;
     }
 };
 
-},{"104":104,"105":105,"126":126,"160":160,"74":74,"94":94}],79:[function(require,module,exports){
-module.exports = function arrayAppend(array, value) {
-    var i = -1;
-    var n = array.length;
-    var array2 = new Array(n + 1);
-    while (++i < n) {
-        array2[i] = array[i];
-    }
-    array2[i] = value;
-    return array2;
-};
-
-},{}],80:[function(require,module,exports){
+},{"101":101,"137":137,"79":79}],82:[function(require,module,exports){
 module.exports = function arrayClone(array) {
     if (!array) {
         return array;
     }
     var i = -1;
     var n = array.length;
-    var array2 = new Array(n);
+    var array2 = [];
     while (++i < n) {
         array2[i] = array[i];
     }
     return array2;
 };
 
-},{}],81:[function(require,module,exports){
-module.exports = function arrayConcat(array, other) {
-    if (!array) {
-        return other;
-    }
-    var i = -1,
-        j = -1;
-    var n = array.length;
-    var m = other.length;
-    var array2 = new Array(n + m);
-    while (++i < n) {
-        array2[i] = array[i];
-    }
-    while (++j < m) {
-        array2[i++] = other[j];
-    }
-    return array2;
-};
-
-},{}],82:[function(require,module,exports){
+},{}],83:[function(require,module,exports){
 module.exports = function arrayFlatMap(array, selector) {
     var index = -1;
     var i = -1;
@@ -6625,7 +5401,7 @@ module.exports = function arrayFlatMap(array, selector) {
     return array2;
 };
 
-},{}],83:[function(require,module,exports){
+},{}],84:[function(require,module,exports){
 module.exports = function arrayMap(array, selector) {
     var i = -1;
     var n = array.length;
@@ -6636,11 +5412,20 @@ module.exports = function arrayMap(array, selector) {
     return array2;
 };
 
-},{}],84:[function(require,module,exports){
-module.exports = function arraySlice(array, indexArg) {
+},{}],85:[function(require,module,exports){
+module.exports = function arraySlice(array, indexArg, endArg) {
     var index = indexArg || 0;
     var i = -1;
-    var n = Math.max(array.length - index, 0);
+    var n = array.length - index;
+
+    if (n < 0) {
+        n = 0;
+    }
+
+    if (endArg > 0 && n > endArg) {
+        n = endArg;
+    }
+
     var array2 = new Array(n);
     while (++i < n) {
         array2[i] = array[i + index];
@@ -6648,185 +5433,60 @@ module.exports = function arraySlice(array, indexArg) {
     return array2;
 };
 
-},{}],85:[function(require,module,exports){
-var $atom = require(125);
-var clone = require(90);
-module.exports = function cloneJsonDense(roots, node, type, value) {
-
-    if (node == null || value === void 0) {
-        return {
-            $type: $atom
-        };
-    }
-
-    if (roots.boxed) {
-        return Boolean(type) && clone(node) || node;
-    }
-
-    return value;
-};
-
-},{"125":125,"90":90}],86:[function(require,module,exports){
-var $atom = require(125);
-var clone = require(90);
-var isPrimitive = require(106);
-var $modelCreated = require(35);
-module.exports = function cloneJsonGraph(roots, node, type, value) {
-
-    if (node == null || value === void 0) {
-        return {
-            $type: $atom
-        };
-    }
-
-    if (roots.boxed === true) {
-        return Boolean(type) && clone(node) || node;
-    }
-
-    if (!type || (type === $atom && isPrimitive(value) && node[$modelCreated])) {
-        return value;
-    }
-
-    return clone(node);
-};
-
-},{"106":106,"125":125,"35":35,"90":90}],87:[function(require,module,exports){
-var cloneRequestedPath = require(89);
-var cloneOptimizedPath = require(88);
-module.exports = function cloneMissingPathSets(roots, pathset, depth, requested, optimized) {
-    roots.requestedMissingPaths.push(cloneRequestedPath(roots.bound, requested, pathset, depth, roots.index));
-    roots.optimizedMissingPaths.push(cloneOptimizedPath(optimized, pathset, depth));
-};
-
-},{"88":88,"89":89}],88:[function(require,module,exports){
-module.exports = function cloneOptimizedPath(optimized, pathset, depth) {
-    var x;
-    var i = -1;
-    var j = depth - 1;
-    var n = optimized.length;
-    var m = pathset.length;
-    var array2 = [];
-    while (++i < n) {
-        array2[i] = optimized[i];
-    }
-    while (++j < m) {
-        x = pathset[j];
-        if (x != null) {
-            array2[i++] = x;
-        }
-    }
-    return array2;
-};
-
-},{}],89:[function(require,module,exports){
-var isObject = require(104);
-module.exports = function cloneRequestedPath(bound, requested, pathset, depth, index) {
-    var x;
-    var i = -1;
-    var j = -1;
-    var l = 0;
-    var m = requested.length;
-    var n = bound.length;
-    var array2 = [];
-    while (++i < n) {
-        array2[i] = bound[i];
-    }
-    while (++j < m) {
-        x = requested[j];
-        if (x != null) {
-            if (isObject(pathset[l++])) {
-                array2[i++] = [x];
-            } else {
-                array2[i++] = x;
-            }
-        }
-    }
-    m = n + l + pathset.length - depth;
-    while (i < m) {
-        array2[i++] = pathset[l++];
-    }
-    if (index != null) {
-        array2.pathSetIndex = index;
-    }
-    return array2;
-};
-
-},{"104":104}],90:[function(require,module,exports){
-var isObject = require(104);
-var prefix = require(39);
+},{}],86:[function(require,module,exports){
+var prefix = require(41);
+var hasOwn = require(92);
+var isArray = Array.isArray;
+var isObject = require(100);
 
 module.exports = function clone(value) {
-    var dest = value,
-        src = dest,
-        i = -1,
-        n, keys, key;
+    var dest = value;
     if (isObject(dest)) {
-        dest = {};
-        keys = Object.keys(src);
-        n = keys.length;
-        while (++i < n) {
-            key = keys[i];
-            if (key[0] !== prefix) {
-                dest[key] = src[key];
+        dest = isArray(value) ? [] : {};
+        var src = value;
+        for (var key in src) {
+            if (key[0] === prefix || !hasOwn(src, key)) {
+                continue;
             }
+            dest[key] = src[key];
         }
     }
     return dest;
 };
 
-},{"104":104,"39":39}],91:[function(require,module,exports){
-var $ref = require(127);
-var $expired = "expired";
-var replaceNode = require(115);
-var graphNode = require(96);
-var updateBackRefs = require(121);
-var isPrimitive = require(106);
-var isExpired = require(100);
+},{"100":100,"41":41,"92":92}],87:[function(require,module,exports){
+var splice = require(52);
+var __invalidated = require(36);
 
-// TODO: comment about what happens if node is a branch vs leaf.
-module.exports = function createBranch(roots, parent, nodeArg, typeArg, key) {
-
-    var node = nodeArg;
-    var type = typeArg;
-
-    if (Boolean(type) && isExpired(roots, node)) {
-        type = $expired;
-    }
-
-    if ((Boolean(type) && type !== $ref) || isPrimitive(node)) {
-        node = replaceNode(parent, node, {}, key, roots.lru);
-        node = graphNode(roots[0], parent, node, key, void 0);
-        node = updateBackRefs(node, roots.version);
+module.exports = function expireNode(node, expired, lru) {
+    if (!node[__invalidated]) {
+        node[__invalidated] = true;
+        expired.push(node);
+        splice(lru, node);
     }
     return node;
 };
 
-},{"100":100,"106":106,"115":115,"121":121,"127":127,"96":96}],92:[function(require,module,exports){
-var __ref = require(42);
-var __context = require(31);
-var __refIndex = require(41);
-var __refsLength = require(43);
-
-module.exports = function deleteBackRefs(node) {
-    var ref, i = -1,
-        n = node[__refsLength] || 0;
-    while (++i < n) {
-        ref = node[__ref + i];
-        if (ref != null) {
-            ref[__context] = ref[__refIndex] = node[__ref + i] = void 0;
-        }
-    }
-    node[__refsLength] = void 0;
+},{"36":36,"52":52}],88:[function(require,module,exports){
+var isObject = require(100);
+module.exports = function getSize(node) {
+    return isObject(node) && node.$expires || undefined;
 };
 
-},{"31":31,"41":41,"42":42,"43":43}],93:[function(require,module,exports){
-var isObject = require(104);
+},{"100":100}],89:[function(require,module,exports){
+var isObject = require(100);
 module.exports = function getSize(node) {
     return isObject(node) && node.$size || 0;
 };
 
-},{"104":104}],94:[function(require,module,exports){
-var isObject = require(104);
+},{"100":100}],90:[function(require,module,exports){
+var isObject = require(100);
+module.exports = function getTimestamp(node) {
+    return isObject(node) && node.$timestamp || undefined;
+};
+
+},{"100":100}],91:[function(require,module,exports){
+var isObject = require(100);
 
 module.exports = function getType(node, anyType) {
     var type = isObject(node) && node.$type || void 0;
@@ -6836,104 +5496,77 @@ module.exports = function getType(node, anyType) {
     return type;
 };
 
-},{"104":104}],95:[function(require,module,exports){
-module.exports = function getValidKey(path) {
-    var key, index = path.length - 1;
-    do {
-        key = path[index];
-        if (key != null) {
-            return key;
-        }
-    } while (--index > -1);
-    return null;
+},{"100":100}],92:[function(require,module,exports){
+var isObject = require(100);
+var hasOwn = Object.prototype.hasOwnProperty;
+
+module.exports = function(obj, prop) {
+  return isObject(obj) && hasOwn.call(obj, prop);
 };
 
-},{}],96:[function(require,module,exports){
-var __key = require(34);
-var __parent = require(38);
-var __version = require(45);
-
-module.exports = function graphNode(root, parent, node, key, version) {
-    node[__parent] = parent;
-    node[__key] = key;
-    node[__version] = version;
-    return node;
-};
-
-},{"34":34,"38":38,"45":45}],97:[function(require,module,exports){
-module.exports = function identity(x) {
-    return x;
-};
-
-},{}],98:[function(require,module,exports){
+},{"100":100}],93:[function(require,module,exports){
 var version = 1;
 module.exports = function incrementVersion() {
     return version++;
 };
 
-},{}],99:[function(require,module,exports){
-var isObject = require(104);
-var removeNode = require(114);
-var prefix = require(39);
+},{}],94:[function(require,module,exports){
+var __key = require(37);
+var __parent = require(40);
+var __version = require(47);
 
-module.exports = function invalidateNode(parent, node, key, lru) {
-    if (removeNode(parent, node, key, lru)) {
-        var type = isObject(node) && node.$type || void 0;
-        if (type == null) {
-            var keys = Object.keys(node);
-            for (var i = -1, n = keys.length; ++i < n;) {
-                var key2 = keys[i];
-                if (key2[0] !== prefix && key2[0] !== "$") {
-                    invalidateNode(node, node[key2], key2, lru);
-                }
-            }
-        }
-        return true;
-    }
-    return false;
+module.exports = function insertNode(node, parent, key, version) {
+    node[__key] = key;
+    node[__parent] = parent;
+    node[__version] = version;
+    parent[key] = node;
+    return node;
 };
 
-},{"104":104,"114":114,"39":39}],100:[function(require,module,exports){
-var $expiresNow = require(129);
-var $expiresNever = require(128);
-var __invalidated = require(33);
-var now = require(110);
-var splice = require(50);
+},{"37":37,"40":40,"47":47}],95:[function(require,module,exports){
+var now = require(106);
+var $now = require(121);
+var $never = require(120);
 
-module.exports = function isExpired(roots, node) {
-    var expires = node.$expires;
-    if ((expires != null) && (
-        expires !== $expiresNever) && (
-        expires === $expiresNow || expires < now())) {
-        if (!node[__invalidated]) {
-            node[__invalidated] = true;
-            roots.expired.push(node);
-            splice(roots.lru, node);
-        }
-        return true;
-    }
-    return false;
+module.exports = function isAlreadyExpired(node) {
+    var exp = node.$expires;
+    return (exp != null) && (
+        exp !== $never) && (
+        exp !== $now) && (
+        exp < now());
 };
 
-},{"110":110,"128":128,"129":129,"33":33,"50":50}],101:[function(require,module,exports){
+},{"106":106,"120":120,"121":121}],96:[function(require,module,exports){
+var now = require(106);
+var $now = require(121);
+var $never = require(120);
+
+module.exports = function isExpired(node) {
+    var exp = node.$expires;
+    return (exp != null) && (
+        exp !== $never ) && (
+        exp === $now || exp < now());
+};
+
+},{"106":106,"120":120,"121":121}],97:[function(require,module,exports){
 var functionTypeof = "function";
 
 module.exports = function isFunction(func) {
     return Boolean(func) && typeof func === functionTypeof;
 };
 
-},{}],102:[function(require,module,exports){
-var isObject = require(104);
+},{}],98:[function(require,module,exports){
+var isObject = require(100);
 
-module.exports = function isJsonGraphEnvelope(envelope) {
+module.exports = function isJSONEnvelope(envelope) {
     return isObject(envelope) && ("json" in envelope);
 };
 
-},{"104":104}],103:[function(require,module,exports){
+},{"100":100}],99:[function(require,module,exports){
 var isArray = Array.isArray;
-var isObject = require(104);
+var isObject = require(100);
 
-module.exports = function isJsonGraphEnvelope(envelope) {
+module.exports = function isJSONGraphEnvelope(envelope) {
     return isObject(envelope) && isArray(envelope.paths) && (
         isObject(envelope.jsonGraph) ||
         isObject(envelope.jsong) ||
@@ -6943,15 +5576,15 @@ module.exports = function isJsonGraphEnvelope(envelope) {
     );
 };
 
-},{"104":104}],104:[function(require,module,exports){
+},{"100":100}],100:[function(require,module,exports){
 var objTypeof = "object";
 module.exports = function isObject(value) {
     return value !== null && typeof value === objTypeof;
 };
 
-},{}],105:[function(require,module,exports){
+},{}],101:[function(require,module,exports){
 var isArray = Array.isArray;
-var isObject = require(104);
+var isObject = require(100);
 
 module.exports = function isPathValue(pathValue) {
     return isObject(pathValue) && (
@@ -6960,493 +5593,462 @@ module.exports = function isPathValue(pathValue) {
         ));
 };
 
-},{"104":104}],106:[function(require,module,exports){
+},{"100":100}],102:[function(require,module,exports){
 var objTypeof = "object";
 module.exports = function isPrimitive(value) {
     return value == null || typeof value !== objTypeof;
 };
 
-},{}],107:[function(require,module,exports){
-var __offset = require(37);
-var isArray = Array.isArray;
-var isObject = require(104);
+},{}],103:[function(require,module,exports){
+var __key = require(37);
+var __parent = require(40);
 
-module.exports = function keyToKeyset(keyArg, iskeyset) {
-    var key = keyArg;
-    if (iskeyset) {
-        if (isArray(key)) {
-            key = key[key[__offset]];
-            return keyToKeyset(key, isObject(key));
-        } else {
-            return key[__offset];
-        }
-    }
-    return key;
-};
+var $ref = require(119);
+var $error = require(118);
+var getSize = require(89);
+var getTimestamp = require(90);
+var isObject = require(100);
+var isExpired = require(96);
+var isFunction = require(97);
 
-},{"104":104,"37":37}],108:[function(require,module,exports){
-var __parent = require(38);
-var $ref = require(127);
+var promote = require(51);
+var wrapNode = require(116);
+var insertNode = require(94);
+var expireNode = require(87);
+var replaceNode = require(109);
+var updateNodeAncestors = require(114);
 
-var isObject = require(104);
-var isExpired = require(100);
-var promote = require(49);
-var wrapNode = require(124);
-var graphNode = require(96);
-var replaceNode = require(115);
-var updateGraph = require(122);
-var invalidateNode = require(99);
+module.exports = function mergeJSONGraphNode(
+    parent, node, message, key, requestedPath, optimizedPath,
+    version, expired, lru, comparator, errorSelector) {
 
-/* eslint-disable eqeqeq */
-module.exports = function mergeNode(roots, parent, nodeArg, messageParent, messageArg, key, requested) {
+    var sizeOffset;
 
-    var node = nodeArg;
-    var message = messageArg;
-    var type, messageType, nodeIsObject, messageIsObject;
+    var cType, mType,
+        cIsObject, mIsObject,
+        cTimestamp, mTimestamp;
 
     // If the cache and message are the same, we can probably return early:
-    // - If they're both null, return null.
+    // - If they're both nullsy,
+    //   - If null then the node needs to be wrapped in an atom and inserted.
+    //     This happens from whole branch merging when a leaf is just a null value
+    //     instead of being wrapped in an atom.
+    //   - If undefined then return null (previous behavior).
     // - If they're both branches, return the branch.
     // - If they're both edges, continue below.
-    if (node == message) {
-        if (node == null) {
-            return null;
-        } else if ((nodeIsObject = isObject(node))) {
-            type = node.$type;
-            if (type == null) {
-                if (node[__parent] == null) {
-                    return graphNode(roots[0], parent, node, key, void 0);
+    if (node === message) {
+
+        // There should not be undefined values.  Those should always be
+        // wrapped in an $atom
+        if (message === null) {
+            node = wrapNode(message, undefined, message);
+            parent = updateNodeAncestors(parent, -node.$size, lru, version);
+            node = insertNode(node, parent, key);
+            promote(lru, node);
+            return node;
+        }
+
+        // The messange and cache are both undefined, therefore return null.
+        else if (message === undefined) {
+            return message;
+        }
+
+        else {
+            cIsObject = isObject(node);
+            if (cIsObject) {
+                // Is the cache node a branch? If so, return the cache branch.
+                cType = node.$type;
+                if (cType == null) {
+                    // Has the branch been introduced to the cache yet? If not,
+                    // give it a parent and key.
+                    if (node[__parent] == null) {
+                        node[__key] = key;
+                        node[__parent] = parent;
+                    }
+                    return node;
                 }
+            }
+        }
+    } else {
+        cIsObject = isObject(node);
+        if (cIsObject) {
+            cType = node.$type;
+        }
+    }
+
+    // If the cache isn't a reference, we might be able to return early.
+    if (cType !== $ref) {
+        mIsObject = isObject(message);
+        if (mIsObject) {
+            mType = message.$type;
+        }
+        if (cIsObject && !cType) {
+            // If the cache is a branch and the message is empty or
+            // also a branch, continue with the cache branch.
+            if (message == null || (mIsObject && !mType)) {
                 return node;
             }
         }
-    } else if ((nodeIsObject = isObject(node))) {
-        type = node.$type;
     }
-
-    var value, messageValue;
-
-    if (type == $ref) {
+    // If the cache is a reference, we might not need to replace it.
+    else {
+        // If the cache is a reference, but the message is empty, leave the cache alone...
         if (message == null) {
-            // If the cache is an expired reference, but the message
-            // is empty, remove the cache value and return undefined
-            // so we build a missing path.
-            if (isExpired(roots, node)) {
-                invalidateNode(parent, node, key, roots.lru);
+            // ...unless the cache is an expired reference. In that case, expire
+            // the cache node and return undefined.
+            if (isExpired(node)) {
+                expireNode(node, expired, lru);
                 return void 0;
             }
-            // If the cache has a reference and the message is empty,
-            // leave the cache alone and follow the reference.
             return node;
-        } else if ((messageIsObject = isObject(message))) {
-            messageType = message.$type;
+        }
+        mIsObject = isObject(message);
+        if (mIsObject) {
+            mType = message.$type;
             // If the cache and the message are both references,
             // check if we need to replace the cache reference.
-            if (messageType == $ref) {
+            if (mType === $ref) {
                 if (node === message) {
                     // If the cache and message are the same reference,
                     // we performed a whole-branch merge of one of the
                     // grandparents. If we've previously graphed this
-                    // reference, break early.
+                    // reference, break early. Otherwise, continue to
+                    // leaf insertion below.
                     if (node[__parent] != null) {
                         return node;
                     }
-                }
-                // If the message doesn't expire immediately and is newer than the
-                // cache (or either cache or message don't have timestamps), attempt
-                // to use the message value.
-                // Note: Number and `undefined` compared LT/GT to `undefined` is `false`.
-                else if ((
-                    isExpired(roots, message) === false) && ((
-                    message.$timestamp < node.$timestamp) === false)) {
+                } else {
 
-                    // Compare the cache and message references.
-                    // - If they're the same, break early so we don't insert.
-                    // - If they're different, replace the cache reference.
+                    cTimestamp = node.$timestamp;
+                    mTimestamp = message.$timestamp;
 
-                    value = node.value;
-                    messageValue = message.value;
-
-                    var count = value.length;
-
-                    // If the reference lengths are equal, check their keys for equality.
-                    if (count === messageValue.length) {
-                        while (--count > -1) {
-                            // If any of their keys are different, replace the reference
-                            // in the cache with the reference in the message.
-                            if (value[count] !== messageValue[count]) {
-                                break;
-                            }
-                        }
-                        // If all their keys are equal, leave the cache value alone.
-                        if (count === -1) {
-                            return node;
-                        }
+                    // - If either the cache or message reference is expired,
+                    //   replace the cache reference with the message.
+                    // - If neither of the references are expired, compare their
+                    //   timestamps. If either of them don't have a timestamp,
+                    //   or the message's timestamp is newer, replace the cache
+                    //   reference with the message reference.
+                    // - If the message reference is older than the cache
+                    //   reference, short-circuit.
+                    if (!isExpired(node) && !isExpired(message) && mTimestamp < cTimestamp) {
+                        return void 0;
                     }
                 }
             }
         }
-    } else {
-        if ((messageIsObject = isObject(message))) {
-            messageType = message.$type;
-        }
-        if (nodeIsObject && !type) {
-            // Otherwise if the cache is a branch and the message is either
-            // null or also a branch, continue with the cache branch.
-            if (message == null || (messageIsObject && !messageType)) {
-                return node;
-            }
-        }
     }
 
-    // If the message is an expired edge, report it back out so we don't build a missing path, but
-    // don't insert it into the cache. If a value exists in the cache that didn't come from a
-    // whole-branch grandparent merge, remove the cache value.
-    if (Boolean(messageType) && Boolean(message[__parent]) && isExpired(roots, message)) {
-        if (nodeIsObject && node != message) {
-            invalidateNode(parent, node, key, roots.lru);
+    // If the cache is a leaf but the message is a branch, merge the branch over the leaf.
+    if (cType && mIsObject && !mType) {
+        return insertNode(replaceNode(node, message, parent, key, lru), parent, key);
+    }
+    // If the message is a sentinel or primitive, insert it into the cache.
+    else if (mType || !mIsObject) {
+        // If the cache and the message are the same value, we branch-merged one
+        // of the message's ancestors. If this is the first time we've seen this
+        // leaf, give the message a $size and $type, attach its graph pointers,
+        // and update the cache sizes and versions.
+        if (mType && node === message) {
+            if (node[__parent] == null) {
+                node = wrapNode(node, cType, node.value);
+                parent = updateNodeAncestors(parent, -node.$size, lru, version);
+                node = insertNode(node, parent, key, version);
+            }
         }
-        return message;
-    }
-    // If the cache is a value, but the message is a branch, merge the branch over the value.
-    else if (Boolean(type) && messageIsObject && !messageType) {
-        node = replaceNode(parent, node, message, key, roots.lru);
-        return graphNode(roots[0], parent, node, key, void 0);
-    }
-    // If the message is a value, insert it into the cache.
-    else if (!messageIsObject || Boolean(messageType)) {
-        var offset = 0;
-        // If we've arrived at this message value, but didn't perform a whole-branch merge
-        // on one of its ancestors, replace the cache node with the message value.
-        if (node != message) {
-            messageValue = messageValue || (Boolean(messageType) ? message.value : message);
-            message = wrapNode(message, messageType, messageValue);
-            var comparator = roots.comparator;
-            var isDistinct = roots.isDistinct = true;
-            if (Boolean(comparator)) {
-                isDistinct = roots.isDistinct = !comparator(requested, node, message);
+        // If the cache and message are different, or the message is a
+        // primitive, replace the cache with the message value. If the message
+        // is a sentinel, clone and maintain its type. If the message is a
+        // primitive value, wrap it in an atom.
+        else {
+            var isDistinct = true;
+            // If the cache is a branch, but the message is a leaf, replace the
+            // cache branch with the message leaf.
+            if (cType || !cIsObject) {
+                // Compare the current cache value with the new value. If either of
+                // them don't have a timestamp, or the message's timestamp is newer,
+                // replace the cache value with the message value. If a comparator
+                // is specified, the comparator takes precedence over timestamps.
+                //
+                // Comparing either Number or undefined to undefined always results in false.
+                isDistinct = (getTimestamp(message) < getTimestamp(node)) === false;
+                // If at least one of the cache/message are sentinels, compare them.
+                if ((cType || mType) && isFunction(comparator)) {
+                    isDistinct = !comparator(node, message, optimizedPath.slice(0, optimizedPath.index));
+                }
             }
             if (isDistinct) {
-                var size = nodeIsObject && node.$size || 0;
-                var messageSize = message.$size;
-                offset = size - messageSize;
+                message = wrapNode(message, mType, mType ? message.value : message);
 
-                node = replaceNode(parent, node, message, key, roots.lru);
-                updateGraph(parent, offset, roots.version, roots.lru);
-                node = graphNode(roots[0], parent, node, key, roots.version);
+                if (mType === $error && isFunction(errorSelector)) {
+                    message = errorSelector(requestedPath.slice(0, requestedPath.index), message);
+                }
+
+                sizeOffset = getSize(node) - getSize(message);
+                node = replaceNode(node, message, parent, key, lru);
+                parent = updateNodeAncestors(parent, sizeOffset, lru, version);
+                node = insertNode(node, parent, key, version);
             }
         }
-        // If the cache and the message are the same value, we branch-merged one of its
-        // ancestors. Give the message a $size and $type, attach its graph pointers, and
-        // update the cache sizes and versions.
-        else if (nodeIsObject && node[__parent] == null) {
-            roots.isDistinct = true;
-            node = parent[key] = wrapNode(node, type, node.value);
-            offset = -node.$size;
-            updateGraph(parent, offset, roots.version, roots.lru);
-            node = graphNode(roots[0], parent, node, key, roots.version);
-        }
-        // Otherwise, cache and message are the same primitive value. Wrap in a atom and insert.
-        else {
-            roots.isDistinct = true;
-            node = parent[key] = wrapNode(node, type, node);
-            offset = -node.$size;
-            updateGraph(parent, offset, roots.version, roots.lru);
-            node = graphNode(roots[0], parent, node, key, roots.version);
-        }
-        // If the node is already expired, return undefined to build a missing path.
-        // if(isExpired(roots, node)) {
-        //     return undefined;
-        // }
 
         // Promote the message edge in the LRU.
-        promote(roots.lru, node);
+        if (isExpired(node)) {
+            expireNode(node, expired, lru);
+        } else {
+            promote(lru, node);
+        }
     }
-    // If we get here, the cache is empty and the message is a branch.
-    // Merge the whole branch over.
     else if (node == null) {
-        node = parent[key] = graphNode(roots[0], parent, message, key, void 0);
+        node = insertNode(message, parent, key);
     }
 
     return node;
 };
-/* eslint-enable */
 
-},{"100":100,"104":104,"115":115,"122":122,"124":124,"127":127,"38":38,"49":49,"96":96,"99":99}],109:[function(require,module,exports){
+},{"100":100,"109":109,"114":114,"116":116,"118":118,"119":119,"37":37,"40":40,"51":51,"87":87,"89":89,"90":90,"94":94,"96":96,"97":97}],104:[function(require,module,exports){
+var $ref = require(119);
+var $error = require(118);
+var getType = require(91);
+var getSize = require(89);
+var getTimestamp = require(90);
+
+var isExpired = require(96);
+var isPrimitive = require(102);
+var isFunction = require(97);
+
+var wrapNode = require(116);
+var expireNode = require(87);
+var insertNode = require(94);
+var replaceNode = require(109);
+var updateNodeAncestors = require(114);
+var updateBackReferenceVersions = require(113);
+
+module.exports = function mergeValueOrInsertBranch(
+    parent, node, key, value,
+    branch, reference, requestedPath, optimizedPath,
+    version, expired, lru, comparator, errorSelector) {
+
+    var type = getType(node, reference);
+
+    if (branch || reference) {
+        if (type && isExpired(node)) {
+            type = "expired";
+            expireNode(node, expired, lru);
+        }
+        if ((type && type !== $ref) || isPrimitive(node)) {
+            node = replaceNode(node, {}, parent, key, lru);
+            node = insertNode(node, parent, key, version);
+            node = updateBackReferenceVersions(node, version);
+        }
+    } else {
+        var message = value;
+        var mType = getType(message);
+        // Compare the current cache value with the new value. If either of
+        // them don't have a timestamp, or the message's timestamp is newer,
+        // replace the cache value with the message value. If a comparator
+        // is specified, the comparator takes precedence over timestamps.
+        //
+        // Comparing either Number or undefined to undefined always results in false.
+        var isDistinct = (getTimestamp(message) < getTimestamp(node)) === false;
+        // If at least one of the cache/message are sentinels, compare them.
+        if ((type || mType) && isFunction(comparator)) {
+            isDistinct = !comparator(node, message, optimizedPath.slice(0, optimizedPath.index));
+        }
+        if (isDistinct) {
+
+            message = wrapNode(message, mType, mType ? message.value : message);
+
+            if (mType === $error && isFunction(errorSelector)) {
+                message = errorSelector(requestedPath.slice(0, requestedPath.index), message);
+            }
+
+            var sizeOffset = getSize(node) - getSize(message);
+
+            node = replaceNode(node, message, parent, key, lru);
+            parent = updateNodeAncestors(parent, sizeOffset, lru, version);
+            node = insertNode(node, parent, key, version);
+        }
+    }
+
+    return node;
+};
+
+},{"102":102,"109":109,"113":113,"114":114,"116":116,"118":118,"119":119,"87":87,"89":89,"90":90,"91":91,"94":94,"96":96,"97":97}],105:[function(require,module,exports){
 module.exports = function noop() {};
 
-},{}],110:[function(require,module,exports){
+},{}],106:[function(require,module,exports){
 module.exports = Date.now;
 
-},{}],111:[function(require,module,exports){
-var incVersion = require(98);
-var getBoundValue = require(14);
+},{}],107:[function(require,module,exports){
+var $ref = require(119);
+var __parent = require(40);
+var splice = require(52);
+var isObject = require(100);
+var unlinkBackReferences = require(111);
+var unlinkForwardReference = require(112);
 
-/**
- * TODO: more options state tracking comments.
- */
-module.exports = function getInitialState(options, model, errorSelector, comparator) {
-
-    var bound = options.bound || (options.bound = model._path || []);
-    var root = options.root || (options.root = model._root.cache);
-    var nodes = options.nodes || (options.nodes = []);
-    var lru = options.lru || (options.lru = model._root);
-    options.expired = options.expired || lru.expired;
-    options.errors = options.errors || [];
-    options.requestedPaths = options.requestedPaths || [];
-    options.optimizedPaths = options.optimizedPaths || [];
-    options.requestedMissingPaths = options.requestedMissingPaths || [];
-    options.optimizedMissingPaths = options.optimizedMissingPaths || [];
-    options.boxed = model._boxed || false;
-    options.materialized = model._materialized;
-    options.errorsAsValues = model._treatErrorsAsValues || false;
-    options.noDataSource = model._source == null;
-    options.version = model._version = incVersion();
-
-    options.offset = options.offset || 0;
-    options.errorSelector = errorSelector || model._errorSelector;
-    options.comparator = comparator;
-
-    if (bound.length) {
-        nodes[0] = getBoundValue(model, bound).value;
-    } else {
-        nodes[0] = root;
-    }
-
-    return options;
-};
-
-},{"14":14,"98":98}],112:[function(require,module,exports){
-var __offset = require(37);
-var isArray = Array.isArray;
-var isObject = require(104);
-
-module.exports = function permuteKeyset(key) {
-    if (isArray(key)) {
-        if (key.length === 0) {
-            return false;
-        }
-        if (key[__offset] === void 0) {
-            return permuteKeyset(key[key[__offset] = 0]) || true;
-        } else if (permuteKeyset(key[key[__offset]])) {
-            return true;
-        } else if (++key[__offset] >= key.length) {
-            key[__offset] = void 0;
-            return false;
-        } else {
-            return true;
-        }
-    } else if (isObject(key)) {
-        if (key[__offset] === void 0) {
-            key[__offset] = (key.from || (key.from = 0)) - 1;
-            if (key.to === void 0) {
-                if (key.length === void 0) {
-                    throw new Error("Range keysets must specify at least one index to retrieve.");
-                } else if (key.length === 0) {
-                    return false;
-                }
-                key.to = key.from + (key.length || 1) - 1;
-            }
-        }
-
-        if (++key[__offset] > key.to) {
-            key[__offset] = key.from - 1;
-            return false;
-        }
-
-        return true;
-    }
-
-    return false;
-};
-
-},{"104":104,"37":37}],113:[function(require,module,exports){
-module.exports = {
-    cache: 0,
-    message: 1,
-    jsong: 2,
-    json: 3
-};
-
-},{}],114:[function(require,module,exports){
-var $ref = require(127);
-var __parent = require(38);
-var unlink = require(120);
-var deleteBackRefs = require(92);
-var splice = require(50);
-var isObject = require(104);
-
-module.exports = function removeNode(parent, node, key, lru) {
+module.exports = function removeNode(node, parent, key, lru) {
     if (isObject(node)) {
         var type = node.$type;
         if (Boolean(type)) {
             if (type === $ref) {
-                unlink(node);
+                unlinkForwardReference(node);
             }
             splice(lru, node);
         }
-        deleteBackRefs(node);
+        unlinkBackReferences(node);
         parent[key] = node[__parent] = void 0;
         return true;
     }
     return false;
 };
 
-},{"104":104,"120":120,"127":127,"38":38,"50":50,"92":92}],115:[function(require,module,exports){
-var transferBackRefs = require(117);
-var invalidateNode = require(99);
+},{"100":100,"111":111,"112":112,"119":119,"40":40,"52":52}],108:[function(require,module,exports){
+var hasOwn = require(92);
+var prefix = require(41);
+var removeNode = require(107);
 
-module.exports = function replaceNode(parent, node, replacement, key, lru) {
-    if (node != null && node !== replacement && typeof node === "object") {
-        transferBackRefs(node, replacement);
-        invalidateNode(parent, node, key, lru);
+module.exports = function removeNodeAndDescendants(node, parent, key, lru) {
+    if (removeNode(node, parent, key, lru)) {
+        if (node.$type == null) {
+            for (var key2 in node) {
+                if (key2[0] !== prefix && key2[0] !== "$" && hasOwn(node, key2)) {
+                    removeNodeAndDescendants(node[key2], node, key2, lru);
+                }
+            }
+        }
+        return true;
+    }
+    return false;
+};
+
+},{"107":107,"41":41,"92":92}],109:[function(require,module,exports){
+var isObject = require(100);
+var transferBackReferences = require(110);
+var removeNodeAndDescendants = require(108);
+
+module.exports = function replaceNode(node, replacement, parent, key, lru) {
+    if (node === replacement) {
+        return node;
+    } else if (isObject(node)) {
+        transferBackReferences(node, replacement);
+        removeNodeAndDescendants(node, parent, key, lru);
     }
     parent[key] = replacement;
     return replacement;
 };
 
-},{"117":117,"99":99}],116:[function(require,module,exports){
-var arraySlice = require(84);
-var arrayClone = require(80);
+},{"100":100,"108":108,"110":110}],110:[function(require,module,exports){
+var __ref = require(44);
+var __context = require(34);
+var __refsLength = require(45);
 
-module.exports = function cloneSuccessPaths(roots, requested, optimized) {
-    roots.requestedPaths.push(arraySlice(requested, roots.offset));
-    roots.optimizedPaths.push(arrayClone(optimized));
-};
-
-},{"80":80,"84":84}],117:[function(require,module,exports){
-var __ref = require(42);
-var __context = require(31);
-var __refsLength = require(43);
-
-module.exports = function transferBackReferences(node, dest) {
-    var nodeRefsLength = node[__refsLength] || 0,
-        destRefsLength = dest[__refsLength] || 0,
-        i = -1,
-        ref;
-    while (++i < nodeRefsLength) {
-        ref = node[__ref + i];
+module.exports = function transferBackReferences(fromNode, destNode) {
+    var fromNodeRefsLength = fromNode[__refsLength] || 0,
+        destNodeRefsLength = destNode[__refsLength] || 0,
+        i = -1;
+    while (++i < fromNodeRefsLength) {
+        var ref = fromNode[__ref + i];
         if (ref !== void 0) {
-            ref[__context] = dest;
-            dest[__ref + (destRefsLength + i)] = ref;
-            node[__ref + i] = void 0;
+            ref[__context] = destNode;
+            destNode[__ref + (destNodeRefsLength + i)] = ref;
+            fromNode[__ref + i] = void 0;
         }
     }
-    dest[__refsLength] = nodeRefsLength + destRefsLength;
-    node[__refsLength] = ref = void 0;
+    destNode[__refsLength] = fromNodeRefsLength + destNodeRefsLength;
+    fromNode[__refsLength] = void 0;
+    return destNode;
 };
 
-},{"31":31,"42":42,"43":43}],118:[function(require,module,exports){
-var $error = require(126);
-var promote = require(49);
-var arrayClone = require(80);
-var clone = require(90);
+},{"34":34,"44":44,"45":45}],111:[function(require,module,exports){
+var __ref = require(44);
+var __context = require(34);
+var __refIndex = require(43);
+var __refsLength = require(45);
 
-module.exports = function treatNodeAsError(roots, node, type, path) {
-    if (node == null) {
-        return false;
-    }
-    promote(roots.lru, node);
-    if (type !== $error || roots.errorsAsValues) {
-        return false;
-    }
-    roots.errors.push({
-        path: arrayClone(path),
-        value: roots.boxed && clone(node) || node.value
-    });
-    return true;
-};
-
-},{"126":126,"49":49,"80":80,"90":90}],119:[function(require,module,exports){
-var $atom = require(125);
-var cloneMisses = require(87);
-var isExpired = require(100);
-
-module.exports = function treatNodeAsMissingPathSet(roots, node, type, pathset, depth, requested, optimized) {
-    var dematerialized = !roots.materialized;
-    if (node == null && dematerialized) {
-        cloneMisses(roots, pathset, depth, requested, optimized);
-        return true;
-    } else if (Boolean(type)) {
-        if (type === $atom && node.value === void 0 && dematerialized && !roots.boxed) {
-            // Don't clone the missing paths because we found a value, but don't want to report it.
-            // TODO: CR Explain weirdness further.
-            return true;
-        } else if (isExpired(roots, node)) {
-            cloneMisses(roots, pathset, depth, requested, optimized);
-            return true;
+module.exports = function unlinkBackReferences(node) {
+    var i = -1, n = node[__refsLength] || 0;
+    while (++i < n) {
+        var ref = node[__ref + i];
+        if (ref != null) {
+            ref[__context] = ref[__refIndex] = node[__ref + i] = void 0;
         }
     }
-    return false;
+    node[__refsLength] = void 0;
+    return node;
 };
 
-},{"100":100,"125":125,"87":87}],120:[function(require,module,exports){
-var __ref = require(42);
-var __context = require(31);
-var __refIndex = require(41);
-var __refsLength = require(43);
+},{"34":34,"43":43,"44":44,"45":45}],112:[function(require,module,exports){
+var __ref = require(44);
+var __context = require(34);
+var __refIndex = require(43);
+var __refsLength = require(45);
 
-module.exports = function unlinkRef(ref) {
-    var destination = ref[__context];
+module.exports = function unlinkForwardReference(reference) {
+    var destination = reference[__context];
     if (destination) {
-        var i = (ref[__refIndex] || 0) - 1,
+        var i = (reference[__refIndex] || 0) - 1,
             n = (destination[__refsLength] || 0) - 1;
         while (++i <= n) {
             destination[__ref + i] = destination[__ref + (i + 1)];
         }
         destination[__refsLength] = n;
-        ref[__refIndex] = ref[__context] = destination = void 0;
+        reference[__refIndex] = reference[__context] = destination = void 0;
     }
+    return reference;
 };
 
-},{"31":31,"41":41,"42":42,"43":43}],121:[function(require,module,exports){
-var __ref = require(42);
-var __parent = require(38);
-var __version = require(45);
-var __refsLength = require(43);
+},{"34":34,"43":43,"44":44,"45":45}],113:[function(require,module,exports){
+var __ref = require(44);
+var __parent = require(40);
+var __version = require(47);
+var __refsLength = require(45);
 
-module.exports = function updateBackRefs(node, version) {
-    if (node && node[__version] !== version) {
-        node[__version] = version;
-        updateBackRefs(node[__parent], version);
-        var i = -1,
-            n = node[__refsLength] || 0;
-        while (++i < n) {
-            updateBackRefs(node[__ref + i], version);
+module.exports = function updateBackReferenceVersions(nodeArg, version) {
+    var stack = [nodeArg];
+    var count = 0;
+    do {
+        var node = stack[count--];
+        if (node && node[__version] !== version) {
+            node[__version] = version;
+            stack[count++] = node[__parent];
+            var i = -1;
+            var n = node[__refsLength] || 0;
+            while (++i < n) {
+                stack[count++] = node[__ref + i];
+            }
         }
-    }
-    return node;
+    } while (count > -1);
+    return nodeArg;
 };
 
-},{"38":38,"42":42,"43":43,"45":45}],122:[function(require,module,exports){
-var __key = require(34);
-var __version = require(45);
-var __parent = require(38);
-var removeNode = require(114);
-var updateBackRefs = require(121);
+},{"40":40,"44":44,"45":45,"47":47}],114:[function(require,module,exports){
+var __key = require(37);
+var __version = require(47);
+var __parent = require(40);
+var removeNode = require(107);
+var updateBackReferenceVersions = require(113);
 
-module.exports = function updateGraph(nodeArg, offset, version, lru) {
-    var node = nodeArg;
+module.exports = function updateNodeAncestors(nodeArg, offset, lru, version) {
     var child = nodeArg;
-    var size;
-    while (child) {
-        node = child[__parent];
-        size = child.$size = (child.$size || 0) - offset;
+    do {
+        var node = child[__parent];
+        var size = child.$size = (child.$size || 0) - offset;
         if (size <= 0 && node != null) {
-            removeNode(node, child, child[__key], lru);
+            removeNode(child, node, child[__key], lru);
         } else if (child[__version] !== version) {
-            updateBackRefs(child, version);
+            updateBackReferenceVersions(child, version);
         }
         child = node;
-    }
+    } while (child);
+    return nodeArg;
 };
 
-},{"114":114,"121":121,"34":34,"38":38,"45":45}],123:[function(require,module,exports){
+},{"107":107,"113":113,"37":37,"40":40,"47":47}],115:[function(require,module,exports){
 var isArray = Array.isArray;
-var isPathValue = require(105);
-var isJsonGraphEnvelope = require(103);
-var isJsonEnvelope = require(102);
-var pathSyntax = require(160);
+var isPathValue = require(101);
+var isJSONGraphEnvelope = require(99);
+var isJSONEnvelope = require(98);
+var pathSyntax = require(137);
 
 /**
  *
@@ -7476,12 +6078,12 @@ module.exports = function validateInput(args, allowedInput, method) {
         }
 
         // jsonGraph {jsonGraph: { ... }, paths: [ ... ]}
-        else if (isJsonGraphEnvelope(arg) && allowedInput.jsonGraph) {
+        else if (isJSONGraphEnvelope(arg) && allowedInput.jsonGraph) {
             valid = true;
         }
 
         // json env {json: {...}}
-        else if (isJsonEnvelope(arg) && allowedInput.json) {
+        else if (isJSONEnvelope(arg) && allowedInput.json) {
             valid = true;
         }
 
@@ -7499,650 +6101,89 @@ module.exports = function validateInput(args, allowedInput, method) {
     return true;
 };
 
-},{"102":102,"103":103,"105":105,"160":160}],124:[function(require,module,exports){
-var $atom = require(125);
+},{"101":101,"137":137,"98":98,"99":99}],116:[function(require,module,exports){
+var jsong = require(133);
+var $atom = jsong.atom;
 
-var now = require(110);
-var clone = require(90);
+var now = require(106);
+var expiresNow = require(121);
+
+var __modelCreated = require(38);
+
+var atomSize = 50;
+
+var clone = require(86);
 var isArray = Array.isArray;
-var isObject = require(104);
-var $modelCreated = require(35);
+var getSize = require(89);
+var getExpires = require(88);
 
-// TODO: CR Wraps a node for insertion.
-// TODO: CR Define default atom size values.
-module.exports = function wrapNode(node, typeArg, value) {
+module.exports = function wrapNode(nodeArg, typeArg, value) {
 
+    var size = 0;
+    var node = nodeArg;
     var type = typeArg;
-    var dest = node,
-        size = 0;
-    var modelCreated = true;
 
-    if (Boolean(type)) {
-        dest = clone(node);
-        size = dest.$size;
-        modelCreated = false;
+    if (type) {
+        node = clone(node);
+        size = getSize(node);
+        node.$type = type;
     } else {
-        dest = {
-            value: value
-        };
-        type = $atom;
+        node = $atom(value);
+        type = node.$type;
+        node[__modelCreated] = true;
     }
 
-    if (size <= 0 || size == null) {
+    if (value == null) {
+        size = atomSize + 1;
+    } else if (size == null || size <= 0) {
         switch (typeof value) {
             case "object":
-                size = isArray(value) && (50 + value.length) || 51;
+                if (isArray(value)) {
+                    size = atomSize + value.length;
+                } else {
+                    size = atomSize + 1;
+                }
                 break;
             case "string":
-                size = 50 + value.length;
+                size = atomSize + value.length;
                 break;
             default:
-                size = 51;
+                size = atomSize + 1;
                 break;
         }
     }
 
-    var expires = isObject(node) && node.$expires || void 0;
-    if (typeof expires === "number" && expires < 0) {
-        dest.$expires = now() + (expires * -1);
+    var expires = getExpires(node);
+
+    if (typeof expires === "number" && expires < expiresNow) {
+        node.$expires = now() + (expires * -1);
     }
 
-    dest.$type = type;
-    dest.$size = size;
-    if (modelCreated) {
-        dest[$modelCreated] = true;
-    }
+    node.$size = size;
 
-    return dest;
+    return node;
 };
 
-},{"104":104,"110":110,"125":125,"35":35,"90":90}],125:[function(require,module,exports){
+},{"106":106,"121":121,"133":133,"38":38,"86":86,"88":88,"89":89}],117:[function(require,module,exports){
 module.exports = "atom";
 
-},{}],126:[function(require,module,exports){
+},{}],118:[function(require,module,exports){
 module.exports = "error";
 
-},{}],127:[function(require,module,exports){
+},{}],119:[function(require,module,exports){
 module.exports = "ref";
 
-},{}],128:[function(require,module,exports){
+},{}],120:[function(require,module,exports){
 module.exports = 1;
 
-},{}],129:[function(require,module,exports){
+},{}],121:[function(require,module,exports){
 module.exports = 0;
 
-},{}],130:[function(require,module,exports){
-module.exports = walkPathMap;
-
-var prefix = require(39);
-var $ref = require(127);
-
-var walkReference = require(134);
-
-var arrayClone = require(80);
-var arrayAppend = require(79);
-
-var isExpired = require(100);
-var isPrimitive = require(106);
-var isObject = require(104);
-var isArray = Array.isArray;
-
-var promote = require(49);
-
-var positions = require(113);
-var _cache = positions.cache;
-var _message = positions.message;
-var _jsong = positions.jsong;
-
-function walkPathMap(onNode, onValueType, pathmap, keysStack, depth, roots, parents, nodes, requested, optimizedArg, key, keyset, isKeyset) {
-
-    var optimized = optimizedArg;
-    var node = nodes[_cache];
-
-    if (isPrimitive(pathmap) || isPrimitive(node)) {
-        return onValueType(pathmap, keysStack, depth, roots, parents, nodes, requested, optimized, key, keyset);
-    }
-
-    var type = node.$type;
-
-    while (type === $ref) {
-
-        if (isExpired(roots, node)) {
-            nodes[_cache] = void 0;
-            return onValueType(pathmap, keysStack, depth, roots, parents, nodes, requested, optimized, key, keyset);
-        }
-
-        promote(roots.lru, node);
-
-        var container = node;
-        var reference = node.value;
-
-        nodes[_cache] = parents[_cache] = roots[_cache];
-        nodes[_jsong] = parents[_jsong] = roots[_jsong];
-        nodes[_message] = parents[_message] = roots[_message];
-
-        walkReference(onNode, container, reference, roots, parents, nodes, requested, optimized);
-
-        node = nodes[_cache];
-
-        if (node == null) {
-            optimized = arrayClone(reference);
-            return onValueType(pathmap, keysStack, depth, roots, parents, nodes, requested, optimized, key, keyset);
-        } else {
-            if (isObject(node)) {
-                type = node.$type;
-            }
-            if ((Boolean(type) && type !== $ref) || isPrimitive(node)) {
-                onNode(pathmap, roots, parents, nodes, requested, optimized, false, null, keyset, false);
-                return onValueType(pathmap, keysStack, depth, roots, parents, nodes, arrayAppend(requested, null), optimized, key, keyset);
-            }
-        }
-    }
-
-    if (type != null) {
-        return onValueType(pathmap, keysStack, depth, roots, parents, nodes, requested, optimized, key, keyset);
-    }
-
-    var keys = keysStack[depth] = Object.keys(pathmap);
-
-    // Force in the arrays hidden field length.
-    if (isArray(pathmap)) {
-        keys[keys.length] = "length";
-    }
-
-    if (keys.length === 0) {
-        return onValueType(pathmap, keysStack, depth, roots, parents, nodes, requested, optimized, key, keyset);
-    }
-
-    var isOuterKeyset = keys.length > 1;
-
-    for (var i = -1, n = keys.length; ++i < n;) {
-
-        var innerKey = keys[i];
-
-        if ((innerKey[0] === prefix) || (innerKey[0] === "$")) {
-            continue;
-        }
-
-        var innerKeyset = isOuterKeyset ? innerKey : keyset;
-        var nodes2 = arrayClone(nodes);
-        var parents2 = arrayClone(parents);
-        var pathmap2 = pathmap[innerKey];
-        var requested2, optimized2;
-        var childKey = false;
-
-        var isBranch = isObject(pathmap2) && !pathmap2.$type; // && !isArray(pathmap2);
-        if (isBranch) {
-            for (childKey in pathmap2) {
-                if ((childKey[0] === prefix) || (childKey[0] === "$")) {
-                    continue;
-                }
-                childKey = pathmap2.hasOwnProperty(childKey);
-                break;
-            }
-            isBranch = childKey === true;
-        }
-
-        requested2 = arrayAppend(requested, innerKey);
-        optimized2 = arrayAppend(optimized, innerKey);
-        onNode(pathmap2, roots, parents2, nodes2, requested2, optimized2, false, isBranch, innerKey, innerKeyset, isOuterKeyset);
-
-        if (isBranch) {
-            walkPathMap(onNode, onValueType,
-                pathmap2, keysStack, depth + 1,
-                roots, parents2, nodes2,
-                requested2, optimized2,
-                innerKey, innerKeyset, isOuterKeyset
-            );
-        } else {
-            onValueType(pathmap2, keysStack, depth + 1, roots, parents2, nodes2, requested2, optimized2, innerKey, innerKeyset);
-        }
-    }
-}
-
-},{"100":100,"104":104,"106":106,"113":113,"127":127,"134":134,"39":39,"49":49,"79":79,"80":80}],131:[function(require,module,exports){
-module.exports = walkPathMap;
-
-var prefix = require(39);
-var __context = require(31);
-var $ref = require(127);
-
-var walkReference = require(134);
-
-var arrayClone = require(80);
-var arrayAppend = require(79);
-
-var isExpired = require(100);
-var isPrimitive = require(106);
-var isObject = require(104);
-var isArray = Array.isArray;
-
-var promote = require(49);
-
-var positions = require(113);
-var _cache = positions.cache;
-
-function walkPathMap(onNode, onValueType, pathmap, keysStack, depth, roots, parents, nodes, requested, optimizedArg, key, keyset, isKeyset) {
-
-    var optimized = optimizedArg;
-    var node = nodes[_cache];
-
-    if (isPrimitive(pathmap) || isPrimitive(node)) {
-        return onValueType(pathmap, keysStack, depth, roots, parents, nodes, requested, optimized, key, keyset);
-    }
-
-    var type = node.$type;
-
-    while (type === $ref) {
-
-        if (isExpired(roots, node)) {
-            nodes[_cache] = void 0;
-            return onValueType(pathmap, keysStack, depth, roots, parents, nodes, requested, optimized, key, keyset);
-        }
-
-        promote(roots.lru, node);
-
-        var container = node;
-        var reference = node.value;
-        node = node[__context];
-
-        if (node != null) {
-            type = node.$type;
-            optimized = arrayClone(reference);
-            nodes[_cache] = node;
-        } else {
-
-            nodes[_cache] = parents[_cache] = roots[_cache];
-
-            walkReference(onNode, container, reference, roots, parents, nodes, requested, optimized);
-
-            node = nodes[_cache];
-
-            if (node == null) {
-                optimized = arrayClone(reference);
-                return onValueType(pathmap, keysStack, depth, roots, parents, nodes, requested, optimized, key, keyset);
-            } else {
-                if (isObject(node)) {
-                    type = node.$type;
-                }
-                if ((Boolean(type) && type !== $ref) || isPrimitive(node)) {
-                    onNode(pathmap, roots, parents, nodes, requested, optimized, false, null, keyset, false);
-                    return onValueType(pathmap, keysStack, depth, roots, parents, nodes, arrayAppend(requested, null), optimized, key, keyset);
-                }
-            }
-        }
-    }
-
-    if (type != null) {
-        return onValueType(pathmap, keysStack, depth, roots, parents, nodes, requested, optimized, key, keyset);
-    }
-
-    var keys = keysStack[depth] = Object.keys(pathmap);
-
-    // Force in the arrays hidden field length.
-    if (isArray(pathmap)) {
-        keys[keys.length] = "length";
-    }
-
-    if (keys.length === 0) {
-        return onValueType(pathmap, keysStack, depth, roots, parents, nodes, requested, optimized, key, keyset);
-    }
-
-    var isOuterKeyset = keys.length > 1;
-
-    for (var i = -1, n = keys.length; ++i < n;) {
-
-        var innerKey = keys[i];
-
-        if ((innerKey[0] === prefix) || (innerKey[0] === "$")) {
-            continue;
-        }
-
-        var innerKeyset = isOuterKeyset ? innerKey : keyset;
-        var nodes2 = arrayClone(nodes);
-        var parents2 = arrayClone(parents);
-        var pathmap2 = pathmap[innerKey];
-        var requested2, optimized2;
-        var childKey = false;
-
-        var isBranch = isObject(pathmap2) && !pathmap2.$type; // && !isArray(pathmap2);
-
-        if (isBranch) {
-            for (childKey in pathmap2) {
-                if ((childKey[0] === prefix) || (childKey[0] === "$")) {
-                    continue;
-                }
-                childKey = pathmap2.hasOwnProperty(childKey);
-                break;
-            }
-            isBranch = childKey === true;
-        }
-
-        if (innerKey === "null") {
-            requested2 = arrayAppend(requested, null);
-            optimized2 = arrayClone(optimized);
-            innerKey = key;
-            innerKeyset = keyset;
-            pathmap2 = pathmap;
-            onNode(pathmap2, roots, parents2, nodes2, requested2, optimized2, false, isBranch, null, innerKeyset, false);
-        } else {
-            requested2 = arrayAppend(requested, innerKey);
-            optimized2 = arrayAppend(optimized, innerKey);
-            onNode(pathmap2, roots, parents2, nodes2, requested2, optimized2, false, isBranch, innerKey, innerKeyset, isOuterKeyset);
-        }
-
-        if (isBranch) {
-            walkPathMap(onNode, onValueType,
-                pathmap2, keysStack, depth + 1,
-                roots, parents2, nodes2,
-                requested2, optimized2,
-                innerKey, innerKeyset, isOuterKeyset
-            );
-        } else {
-            onValueType(pathmap2, keysStack, depth + 1, roots, parents2, nodes2, requested2, optimized2, innerKey, innerKeyset);
-        }
-    }
-}
-
-},{"100":100,"104":104,"106":106,"113":113,"127":127,"134":134,"31":31,"39":39,"49":49,"79":79,"80":80}],132:[function(require,module,exports){
-module.exports = walkPathSet;
-
-var $ref = require(127);
-
-var walkReference = require(134);
-
-var arrayClone = require(80);
-var arrayAppend = require(79);
-
-var isExpired = require(100);
-var isPrimitive = require(106);
-var isObject = require(104);
-
-var keysetToKey = require(107);
-var permuteKeyset = require(112);
-
-var promote = require(49);
-
-var positions = require(113);
-var _cache = positions.cache;
-var _message = positions.message;
-var _jsong = positions.jsong;
-
-function walkPathSet(onNode, onValueType, pathset, depth, roots, parents, nodes, requested, optimizedArg, key, keyset, isKeyset) {
-
-    var optimized = optimizedArg;
-    var node = nodes[_cache];
-
-    if (depth >= pathset.length || isPrimitive(node)) {
-        return onValueType(pathset, depth, roots, parents, nodes, requested, optimized, key, keyset);
-    }
-
-    var type = node.$type;
-
-    while (type === $ref) {
-
-        if (isExpired(roots, node)) {
-            nodes[_cache] = void 0;
-            return onValueType(pathset, depth, roots, parents, nodes, requested, optimized, key, keyset);
-        }
-
-        promote(roots.lru, node);
-
-        var container = node;
-        var reference = node.value;
-
-        nodes[_cache] = parents[_cache] = roots[_cache];
-        nodes[_jsong] = parents[_jsong] = roots[_jsong];
-        nodes[_message] = parents[_message] = roots[_message];
-
-        walkReference(onNode, container, reference, roots, parents, nodes, requested, optimized);
-
-        node = nodes[_cache];
-
-        if (node == null) {
-            optimized = arrayClone(reference);
-            return onValueType(pathset, depth, roots, parents, nodes, requested, optimized, key, keyset);
-        } else {
-            if (isObject(node)) {
-                type = node.$type;
-            }
-            if ((Boolean(type) && type !== $ref) || isPrimitive(node)) {
-                onNode(pathset, roots, parents, nodes, requested, optimized, false, false, null, keyset, false);
-                return onValueType(pathset, depth, roots, parents, nodes, arrayAppend(requested, null), optimized, key, keyset);
-            }
-        }
-    }
-
-    if (type != null) {
-        return onValueType(pathset, depth, roots, parents, nodes, requested, optimized, key, keyset);
-    }
-
-    var outerKey = pathset[depth];
-    var isOuterKeyset = isObject(outerKey);
-    var isBranch = depth < pathset.length - 1;
-    var runOnce = false;
-
-    while (isOuterKeyset && permuteKeyset(outerKey) || (!runOnce)) {
-        runOnce = true;
-        var innerKey, innerKeyset;
-
-        if (isOuterKeyset === true) {
-            innerKey = keysetToKey(outerKey, true);
-            innerKeyset = innerKey;
-        } else {
-            innerKey = outerKey;
-            innerKeyset = keyset;
-        }
-
-        var nodes2 = arrayClone(nodes);
-        var parents2 = arrayClone(parents);
-        var requested2, optimized2;
-
-        if (innerKey == null) {
-            requested2 = arrayAppend(requested, null);
-            optimized2 = arrayClone(optimized);
-            // optimized2 = optimized;
-            innerKey = key;
-            innerKeyset = keyset;
-            onNode(pathset, roots, parents2, nodes2, requested2, optimized2, false, isBranch, null, innerKeyset, false);
-        } else {
-            requested2 = arrayAppend(requested, innerKey);
-            optimized2 = arrayAppend(optimized, innerKey);
-            onNode(pathset, roots, parents2, nodes2, requested2, optimized2, false, isBranch, innerKey, innerKeyset, isOuterKeyset);
-        }
-
-        walkPathSet(onNode, onValueType,
-            pathset, depth + 1,
-            roots, parents2, nodes2,
-            requested2, optimized2,
-            innerKey, innerKeyset, isOuterKeyset
-        );
-    }
-}
-
-},{"100":100,"104":104,"106":106,"107":107,"112":112,"113":113,"127":127,"134":134,"49":49,"79":79,"80":80}],133:[function(require,module,exports){
-module.exports = walkPathSet;
-
-var __context = require(31);
-var $ref = require(127);
-
-var walkReference = require(134);
-
-var arrayClone = require(80);
-var arrayAppend = require(79);
-
-var isExpired = require(100);
-var isPrimitive = require(106);
-var isObject = require(104);
-
-var keysetToKey = require(107);
-var permuteKeyset = require(112);
-
-var promote = require(49);
-
-var positions = require(113);
-var _cache = positions.cache;
-
-function walkPathSet(onNode, onValueType, pathset, depth, roots, parents, nodes, requested, optimizedArg, key, keyset, isKeyset) {
-
-    var optimized = optimizedArg;
-    var node = nodes[_cache];
-
-    if (depth >= pathset.length || isPrimitive(node)) {
-        return onValueType(pathset, depth, roots, parents, nodes, requested, optimized, key, keyset);
-    }
-
-    var type = node.$type;
-
-    while (type === $ref) {
-
-        if (isExpired(roots, node)) {
-            nodes[_cache] = void 0;
-            return onValueType(pathset, depth, roots, parents, nodes, requested, optimized, key, keyset);
-        }
-
-        promote(roots.lru, node);
-
-        var container = node;
-        var reference = node.value;
-        node = node[__context];
-
-        if (node != null) {
-            type = node.$type;
-            optimized = arrayClone(reference);
-            nodes[_cache] = node;
-        } else {
-
-            nodes[_cache] = parents[_cache] = roots[_cache];
-
-            walkReference(onNode, container, reference, roots, parents, nodes, requested, optimized);
-
-            node = nodes[_cache];
-
-            if (node == null) {
-                optimized = arrayClone(reference);
-                return onValueType(pathset, depth, roots, parents, nodes, requested, optimized, key, keyset);
-            } else {
-                if (isObject(node)) {
-                    type = node.$type;
-                }
-                if ((Boolean(type) && type !== $ref) || isPrimitive(node)) {
-                    onNode(pathset, roots, parents, nodes, requested, optimized, false, false, null, keyset, false);
-                    return onValueType(pathset, depth, roots, parents, nodes, arrayAppend(requested, null), optimized, key, keyset);
-                }
-            }
-        }
-    }
-
-    if (type != null) {
-        return onValueType(pathset, depth, roots, parents, nodes, requested, optimized, key, keyset);
-    }
-
-    var outerKey = pathset[depth];
-    var isOuterKeyset = isObject(outerKey);
-    var isBranch = depth < pathset.length - 1;
-    var runOnce = false;
-
-    while (isOuterKeyset && permuteKeyset(outerKey) || (!runOnce)) {
-        runOnce = true;
-        var innerKey, innerKeyset;
-
-        if (isOuterKeyset === true) {
-            innerKey = keysetToKey(outerKey, true);
-            innerKeyset = innerKey;
-        } else {
-            innerKey = outerKey;
-            innerKeyset = keyset;
-        }
-
-        var nodes2 = arrayClone(nodes);
-        var parents2 = arrayClone(parents);
-        var requested2, optimized2;
-
-        if (innerKey == null) {
-            requested2 = arrayAppend(requested, null);
-            optimized2 = arrayClone(optimized);
-            // optimized2 = optimized;
-            innerKey = key;
-            innerKeyset = keyset;
-            onNode(pathset, roots, parents2, nodes2, requested2, optimized2, false, isBranch, null, innerKeyset, false);
-        } else {
-            requested2 = arrayAppend(requested, innerKey);
-            optimized2 = arrayAppend(optimized, innerKey);
-            onNode(pathset, roots, parents2, nodes2, requested2, optimized2, false, isBranch, innerKey, innerKeyset, isOuterKeyset);
-        }
-
-        walkPathSet(onNode, onValueType,
-            pathset, depth + 1,
-            roots, parents2, nodes2,
-            requested2, optimized2,
-            innerKey, innerKeyset, isOuterKeyset
-        );
-    }
-}
-
-},{"100":100,"104":104,"106":106,"107":107,"112":112,"113":113,"127":127,"134":134,"31":31,"49":49,"79":79,"80":80}],134:[function(require,module,exports){
-module.exports = walkReference;
-
-var __ref = require(42);
-var __context = require(31);
-var __refIndex = require(41);
-var __refsLength = require(43);
-
-var isObject = require(104);
-var isPrimitive = require(106);
-
-var positions = require(113);
-var _cache = positions.cache;
-
-function walkReference(onNode, container, reference, roots, parents, nodes, requested, optimized) {
-
-    optimized.length = 0;
-
-    var index = -1;
-    var count = reference.length;
-    var node, key, keyset;
-
-    while (++index < count) {
-
-        node = nodes[_cache];
-
-        if (node == null) {
-            return nodes;
-        } else if (isPrimitive(node) || node.$type) {
-            onNode(reference, roots, parents, nodes, requested, optimized, true, false, keyset, null, false);
-            return nodes;
-        }
-
-        do {
-            key = reference[index];
-            if (key != null) {
-                keyset = key;
-                optimized.push(key);
-                onNode(reference, roots, parents, nodes, requested, optimized, true, index < count - 1, key, null, false);
-                break;
-            }
-        } while (++index < count);
-    }
-
-    node = nodes[_cache];
-
-    if (isObject(node) && container[__context] !== node) {
-        var backrefs = node[__refsLength] || 0;
-        node[__refsLength] = backrefs + 1;
-        node[__ref + backrefs] = container;
-        container[__context] = node;
-        container[__refIndex] = backrefs;
-    }
-
-    return nodes;
-}
-
-},{"104":104,"106":106,"113":113,"31":31,"41":41,"42":42,"43":43}],135:[function(require,module,exports){
+},{}],122:[function(require,module,exports){
 "use strict";
 
 // rawAsap provides everything we need except exception management.
-var rawAsap = require(136);
+var rawAsap = require(123);
 // RawTasks are recycled to reduce GC churn.
 var freeTasks = [];
 // We queue errors to ensure they are thrown in right order (FIFO).
@@ -8206,7 +6247,7 @@ RawTask.prototype.call = function () {
     }
 };
 
-},{"136":136}],136:[function(require,module,exports){
+},{"123":123}],123:[function(require,module,exports){
 (function (global){
 "use strict";
 
@@ -8430,7 +6471,7 @@ rawAsap.makeRequestCallFromTimer = makeRequestCallFromTimer;
 // https://github.com/tildeio/rsvp.js/blob/cddf7232546a9cf858524b75cde6f9edf72620a7/lib/rsvp/asap.js
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],137:[function(require,module,exports){
+},{}],124:[function(require,module,exports){
 (function (process){
 "use strict";
 
@@ -8512,7 +6553,7 @@ function requestFlush() {
         if (!domain) {
             // Lazy execute the domain module.
             // Only employed if the user elects to use domains.
-            domain = require(138);
+            domain = require(125);
         }
         domain.active = process.domain = null;
     }
@@ -8534,12 +6575,12 @@ function requestFlush() {
     }
 }
 
-}).call(this,require(140))
-},{"138":138,"140":140}],138:[function(require,module,exports){
+}).call(this,require(127))
+},{"125":125,"127":127}],125:[function(require,module,exports){
 /*global define:false require:false */
 module.exports = (function(){
 	// Import Events
-	var events = require(139)
+	var events = require(126)
 
 	// Export Domain
 	var domain = {}
@@ -8603,7 +6644,7 @@ module.exports = (function(){
 	};
 	return domain
 }).call(this)
-},{"139":139}],139:[function(require,module,exports){
+},{"126":126}],126:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -8906,7 +6947,7 @@ function isUndefined(arg) {
   return arg === void 0;
 }
 
-},{}],140:[function(require,module,exports){
+},{}],127:[function(require,module,exports){
 // shim for using process in browser
 
 var process = module.exports = {};
@@ -8939,7 +6980,9 @@ function drainQueue() {
         currentQueue = queue;
         queue = [];
         while (++queueIndex < len) {
-            currentQueue[queueIndex].run();
+            if (currentQueue) {
+                currentQueue[queueIndex].run();
+            }
         }
         queueIndex = -1;
         len = queue.length;
@@ -8991,17 +7034,16 @@ process.binding = function (name) {
     throw new Error('process.binding is not supported');
 };
 
-// TODO(shtylman)
 process.cwd = function () { return '/' };
 process.chdir = function (dir) {
     throw new Error('process.chdir is not supported');
 };
 process.umask = function() { return 0; };
 
-},{}],141:[function(require,module,exports){
+},{}],128:[function(require,module,exports){
 'use strict';
-var request = require(145);
-var buildQueryObject = require(142);
+var request = require(132);
+var buildQueryObject = require(129);
 var isArray = Array.isArray;
 
 function simpleExtend(obj, obj2) {
@@ -9099,7 +7141,7 @@ XMLHttpSource['default'] = XMLHttpSource;
 // commonjs
 module.exports = XMLHttpSource;
 
-},{"142":142,"145":145}],142:[function(require,module,exports){
+},{"129":129,"132":132}],129:[function(require,module,exports){
 'use strict';
 module.exports = function buildQueryObject(url, method, queryData) {
   var qData = [];
@@ -9128,7 +7170,7 @@ module.exports = function buildQueryObject(url, method, queryData) {
   return data;
 };
 
-},{}],143:[function(require,module,exports){
+},{}],130:[function(require,module,exports){
 (function (global){
 'use strict';
 // Get CORS support even for older IE
@@ -9144,7 +7186,7 @@ module.exports = function getCORSRequest() {
 };
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],144:[function(require,module,exports){
+},{}],131:[function(require,module,exports){
 (function (global){
 'use strict';
 module.exports = function getXMLHttpRequest() {
@@ -9172,32 +7214,51 @@ module.exports = function getXMLHttpRequest() {
 };
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],145:[function(require,module,exports){
+},{}],132:[function(require,module,exports){
 'use strict';
-var getXMLHttpRequest = require(144);
-var getCORSRequest = require(143);
+var getXMLHttpRequest = require(131);
+var getCORSRequest = require(130);
 var hasOwnProp = Object.prototype.hasOwnProperty;
+
+var noop = function() {};
 
 function Observable() {}
 
 Observable.create = function(subscribe) {
   var o = new Observable();
-  o.subscribe = function(observer) {
-    var s = subscribe(observer);
-    if (typeof s === 'function') {
+
+  o.subscribe = function(onNext, onError, onCompleted) {
+
+    var observer;
+    var disposable;
+
+    if (typeof onNext === 'function') {
+        observer = {
+            onNext: onNext,
+            onError: (onError || noop),
+            onCompleted: (onCompleted || noop)
+        };
+    } else {
+        observer = onNext;
+    }
+
+    disposable = subscribe(observer);
+
+    if (typeof disposable === 'function') {
       return {
-        dispose: s
+        dispose: disposable
       };
+    } else {
+      return disposable;
     }
-    else {
-      return s;
-    }
-  }
+  };
+
   return o;
-}
+};
 
 function request(method, options, context) {
   return Observable.create(function requestObserver(observer) {
+
     var config = {
       method: method || 'GET',
       crossDomain: false,
@@ -9205,6 +7266,7 @@ function request(method, options, context) {
       headers: {},
       responseType: 'json'
     };
+
     var xhr,
       isDone,
       headers,
@@ -9266,7 +7328,7 @@ function request(method, options, context) {
           //
           // The json response type can be ignored if not supported, because JSON payloads are
           // parsed on the client-side regardless.
-          if (responseType !== 'json') {
+          if (config.responseType !== 'json') {
             throw e;
           }
         }
@@ -9375,14 +7437,54 @@ function onXhrError(observer, xhr, status, e) {
 
 module.exports = request;
 
-},{"143":143,"144":144}],146:[function(require,module,exports){
+},{"130":130,"131":131}],133:[function(require,module,exports){
+var pathSyntax = require(137);
+
+function sentinel(type, value, props) {
+    var copy = Object.create(null);
+    if (props != null) {
+        for(var key in props) {
+            copy[key] = props[key];
+        }
+        
+        copy["$type"] = type;
+        copy.value = value;
+        return copy;
+    }
+    else {
+        return { $type: type, value: value };
+    }    
+}
+
+module.exports = {
+    ref: function ref(path, props) {
+        return sentinel("ref", pathSyntax.fromPath(path), props);
+    },
+    atom: function atom(value, props) {
+        return sentinel("atom", value, props);        
+    },
+    undefined: function() {
+        return sentinel("atom");
+    },    
+    error: function error(errorValue, props) {
+        return sentinel("error", errorValue, props);        
+    },
+    pathValue: function pathValue(path, value) {
+        return { path: pathSyntax.fromPath(path), value: value };
+    },
+    pathInvalidation: function pathInvalidation(path) {
+        return { path: pathSyntax.fromPath(path), invalidated: true };
+    }    
+};
+
+},{"137":137}],134:[function(require,module,exports){
 module.exports = {
     integers: 'integers',
     ranges: 'ranges',
     keys: 'keys'
 };
 
-},{}],147:[function(require,module,exports){
+},{}],135:[function(require,module,exports){
 var TokenTypes = {
     token: 'token',
     dotSeparator: '.',
@@ -9400,7 +7502,7 @@ var TokenTypes = {
 
 module.exports = TokenTypes;
 
-},{}],148:[function(require,module,exports){
+},{}],136:[function(require,module,exports){
 module.exports = {
     indexer: {
         nested: 'Indexers cannot be nested.',
@@ -9434,10 +7536,10 @@ module.exports = {
 };
 
 
-},{}],149:[function(require,module,exports){
-var Tokenizer = require(155);
-var head = require(150);
-var RoutedTokens = require(146);
+},{}],137:[function(require,module,exports){
+var Tokenizer = require(143);
+var head = require(138);
+var RoutedTokens = require(134);
 
 var parser = function parser(string, extendedRules) {
     return head(new Tokenizer(string, extendedRules));
@@ -9494,10 +7596,10 @@ parser.fromPath = function(path, ext) {
 // Potential routed tokens.
 parser.RoutedTokens = RoutedTokens;
 
-},{"146":146,"150":150,"155":155}],150:[function(require,module,exports){
-var TokenTypes = require(147);
-var E = require(148);
-var indexer = require(151);
+},{"134":134,"138":138,"143":143}],138:[function(require,module,exports){
+var TokenTypes = require(135);
+var E = require(136);
+var indexer = require(139);
 
 /**
  * The top level of the parse tree.  This returns the generated path
@@ -9555,13 +7657,13 @@ module.exports = function head(tokenizer) {
 };
 
 
-},{"147":147,"148":148,"151":151}],151:[function(require,module,exports){
-var TokenTypes = require(147);
-var E = require(148);
+},{"135":135,"136":136,"139":139}],139:[function(require,module,exports){
+var TokenTypes = require(135);
+var E = require(136);
 var idxE = E.indexer;
-var range = require(153);
-var quote = require(152);
-var routed = require(154);
+var range = require(141);
+var quote = require(140);
+var routed = require(142);
 
 /**
  * The indexer is all the logic that happens in between
@@ -9671,9 +7773,9 @@ module.exports = function indexer(tokenizer, openingToken, state, out) {
 };
 
 
-},{"147":147,"148":148,"152":152,"153":153,"154":154}],152:[function(require,module,exports){
-var TokenTypes = require(147);
-var E = require(148);
+},{"135":135,"136":136,"140":140,"141":141,"142":142}],140:[function(require,module,exports){
+var TokenTypes = require(135);
+var E = require(136);
 var quoteE = E.quote;
 
 /**
@@ -9755,10 +7857,10 @@ module.exports = function quote(tokenizer, openingToken, state, out) {
 };
 
 
-},{"147":147,"148":148}],153:[function(require,module,exports){
-var Tokenizer = require(155);
-var TokenTypes = require(147);
-var E = require(148);
+},{"135":135,"136":136}],141:[function(require,module,exports){
+var Tokenizer = require(143);
+var TokenTypes = require(135);
+var E = require(136);
 
 /**
  * The indexer is all the logic that happens in between
@@ -9834,10 +7936,10 @@ module.exports = function range(tokenizer, openingToken, state, out) {
 };
 
 
-},{"147":147,"148":148,"155":155}],154:[function(require,module,exports){
-var TokenTypes = require(147);
-var RoutedTokens = require(146);
-var E = require(148);
+},{"135":135,"136":136,"143":143}],142:[function(require,module,exports){
+var TokenTypes = require(135);
+var RoutedTokens = require(134);
+var E = require(136);
 var routedE = E.routed;
 
 /**
@@ -9900,8 +8002,8 @@ module.exports = function routed(tokenizer, openingToken, state, out) {
 };
 
 
-},{"146":146,"147":147,"148":148}],155:[function(require,module,exports){
-var TokenTypes = require(147);
+},{"134":134,"135":135,"136":136}],143:[function(require,module,exports){
+var TokenTypes = require(135);
 var DOT_SEPARATOR = '.';
 var COMMA_SEPARATOR = ',';
 var OPENING_BRACKET = '[';
@@ -10052,69 +8154,9 @@ function getNext(string, idx, ext) {
 
 
 
-},{"147":147}],156:[function(require,module,exports){
-var pathSyntax = require(149);
-
-function sentinel(type, value, props) {
-    var copy = Object.create(null);
-    if (props != null) {
-        for(var key in props) {
-            copy[key] = props[key];
-        }
-        
-        copy["$type"] = type;
-        copy.value = value;
-        return copy;
-    }
-    else {
-        return { $type: type, value: value };
-    }    
-}
-
-module.exports = {
-    ref: function ref(path, props) {
-        return sentinel("ref", pathSyntax.fromPath(path), props);
-    },
-    atom: function atom(value, props) {
-        return sentinel("atom", value, props);        
-    },
-    undefined: function() {
-        return sentinel("atom");
-    },    
-    error: function error(errorValue, props) {
-        return sentinel("error", errorValue, props);        
-    },
-    pathValue: function pathValue(path, value) {
-        return { path: pathSyntax.fromPath(path), value: value };
-    },
-    pathInvalidation: function pathInvalidation(path) {
-        return { path: pathSyntax.fromPath(path), invalidated: true };
-    }    
-};
-
-},{"149":149}],157:[function(require,module,exports){
-arguments[4][146][0].apply(exports,arguments)
-},{"146":146}],158:[function(require,module,exports){
-arguments[4][147][0].apply(exports,arguments)
-},{"147":147}],159:[function(require,module,exports){
-arguments[4][148][0].apply(exports,arguments)
-},{"148":148}],160:[function(require,module,exports){
-arguments[4][149][0].apply(exports,arguments)
-},{"149":149,"157":157,"161":161,"166":166}],161:[function(require,module,exports){
-arguments[4][150][0].apply(exports,arguments)
-},{"150":150,"158":158,"159":159,"162":162}],162:[function(require,module,exports){
-arguments[4][151][0].apply(exports,arguments)
-},{"151":151,"158":158,"159":159,"163":163,"164":164,"165":165}],163:[function(require,module,exports){
-arguments[4][152][0].apply(exports,arguments)
-},{"152":152,"158":158,"159":159}],164:[function(require,module,exports){
-arguments[4][153][0].apply(exports,arguments)
-},{"153":153,"158":158,"159":159,"166":166}],165:[function(require,module,exports){
-arguments[4][154][0].apply(exports,arguments)
-},{"154":154,"157":157,"158":158,"159":159}],166:[function(require,module,exports){
-arguments[4][155][0].apply(exports,arguments)
-},{"155":155,"158":158}],167:[function(require,module,exports){
-var toPaths = require(170);
-var toTree = require(171);
+},{"135":135}],144:[function(require,module,exports){
+var toPaths = require(150);
+var toTree = require(151);
 
 module.exports = function collapse(paths) {
     var collapseMap = paths.
@@ -10136,16 +8178,68 @@ module.exports = function collapse(paths) {
     return toPaths(collapseMap);
 };
 
-},{"170":170,"171":171}],168:[function(require,module,exports){
-module.exports = {
-    iterateKeySet: require(169),
-    toTree: require(171),
-    toTreeWithUnion: require(172),
-    toPaths: require(170),
-    collapse: require(167)
+},{"150":150,"151":151}],145:[function(require,module,exports){
+var iterateKeySet = require(147);
+
+/**
+ * Tests to see if the intersection should be stripped from the
+ * total paths.  The only way this happens currently is if the entirety
+ * of the path is contained in the tree.
+ * @private
+ */
+module.exports = function hasIntersection(tree, path, depth) {
+    var current = tree;
+    var intersects = true;
+
+    // Continue iteratively going down a path until a complex key is
+    // encountered, then recurse.
+    for (;intersects && depth < path.length; ++depth) {
+        var key = path[depth];
+        var keyType = typeof key;
+
+        // We have to iterate key set
+        if (key && keyType === 'object') {
+            var note = {};
+            var innerKey = iterateKeySet(key, note);
+            var nextDepth = depth + 1;
+
+            // Loop through the innerKeys setting the intersects flag
+            // to each result.  Break out on false.
+            do {
+                var next = current[innerKey];
+                intersects = next !== undefined;
+
+                if (intersects) {
+                    intersects = hasIntersection(next, path, nextDepth);
+                }
+                innerKey = iterateKeySet(key, note);
+            } while (intersects && !note.done);
+
+            // Since we recursed, we shall not pass any further!
+            break;
+        }
+
+        // Its a simple key, just move forward with the testing.
+        current = current[key];
+        intersects = current !== undefined;
+    }
+
+    return intersects;
 };
 
-},{"167":167,"169":169,"170":170,"171":171,"172":172}],169:[function(require,module,exports){
+},{"147":147}],146:[function(require,module,exports){
+module.exports = {
+    iterateKeySet: require(147),
+    toTree: require(151),
+    toTreeWithUnion: require(152),
+    pathsComplementFromTree: require(149),
+    pathsComplementFromLengthTree: require(148),
+    hasIntersection: require(145),
+    toPaths: require(150),
+    collapse: require(144)
+};
+
+},{"144":144,"145":145,"147":147,"148":148,"149":149,"150":150,"151":151,"152":152}],147:[function(require,module,exports){
 var isArray = Array.isArray;
 
 /**
@@ -10252,7 +8346,66 @@ function initializeNote(key, note) {
     note.arrayOffset = 0;
 }
 
-},{}],170:[function(require,module,exports){
+},{}],148:[function(require,module,exports){
+var hasIntersection = require(145);
+
+/**
+ * Compares the paths passed in with the tree.  Any of the paths that are in
+ * the tree will be stripped from the paths.
+ *
+ * **Does not mutate** the incoming paths object.
+ * **Proper subset** only matching.
+ *
+ * @param {Array} paths - A list of paths (complex or simple) to strip the
+ * intersection
+ * @param {Object} tree -
+ * @public
+ */
+module.exports = function pathsComplementFromLengthTree(paths, tree) {
+    var out = [];
+    var outLength = -1;
+
+    for (var i = 0, len = paths.length; i < len; ++i) {
+        // If this does not intersect then add it to the output.
+        var path = paths[i];
+        if (!hasIntersection(tree[path.length], path, 0)) {
+            out[++outLength] = path;
+        }
+    }
+    return out;
+};
+
+
+},{"145":145}],149:[function(require,module,exports){
+var hasIntersection = require(145);
+
+/**
+ * Compares the paths passed in with the tree.  Any of the paths that are in
+ * the tree will be stripped from the paths.
+ *
+ * **Does not mutate** the incoming paths object.
+ * **Proper subset** only matching.
+ *
+ * @param {Array} paths - A list of paths (complex or simple) to strip the
+ * intersection
+ * @param {Object} tree -
+ * @public
+ */
+module.exports = function pathsComplementFromTree(paths, tree) {
+    var out = [];
+    var outLength = -1;
+
+    for (var i = 0, len = paths.length; i < len; ++i) {
+        // If this does not intersect then add it to the output.
+        if (!hasIntersection(tree, paths[i], 0)) {
+            out[++outLength] = paths[i];
+        }
+    }
+    return out;
+};
+
+
+},{"145":145}],150:[function(require,module,exports){
 var isArray = Array.isArray;
 var typeOfObject = "object";
 
@@ -10474,8 +8627,8 @@ function isNumber(val) {
 }
 
 
-},{}],171:[function(require,module,exports){
-var iterateKeySet = require(169);
+},{}],151:[function(require,module,exports){
+var iterateKeySet = require(147);
 var isArray = Array.isArray;
 
 /**
@@ -10520,19 +8673,19 @@ function innerToTree(seed, path, depth) {
 }
 
 
-},{"169":169}],172:[function(require,module,exports){
+},{"147":147}],152:[function(require,module,exports){
 
-},{}],173:[function(require,module,exports){
+},{}],153:[function(require,module,exports){
 'use strict';
 
-module.exports = require(178)
+module.exports = require(158)
 
-},{"178":178}],174:[function(require,module,exports){
+},{"158":158}],154:[function(require,module,exports){
 'use strict';
 
-var asap = require(137)
+var asap = require(124);
 
-function noop() {};
+function noop() {}
 
 // States:
 //
@@ -10580,100 +8733,113 @@ function tryCallTwo(fn, a, b) {
 }
 
 module.exports = Promise;
+
 function Promise(fn) {
-  if (typeof this !== 'object') throw new TypeError('Promises must be constructed via new')
-  if (typeof fn !== 'function') throw new TypeError('not a function')
-  this._71 = 0;
-  this._18 = null;
-  this._61 = [];
+  if (typeof this !== 'object') {
+    throw new TypeError('Promises must be constructed via new');
+  }
+  if (typeof fn !== 'function') {
+    throw new TypeError('not a function');
+  }
+  this._37 = 0;
+  this._12 = null;
+  this._59 = [];
   if (fn === noop) return;
   doResolve(fn, this);
 }
-Promise.prototype._10 = function (onFulfilled, onRejected) {
-  var self = this;
-  return new this.constructor(function (resolve, reject) {
-    var res = new Promise(noop);
-    res.then(resolve, reject);
-    self._24(new Handler(onFulfilled, onRejected, res));
-  });
-};
+Promise._99 = noop;
+
 Promise.prototype.then = function(onFulfilled, onRejected) {
-  if (this.constructor !== Promise) return this._10(onFulfilled, onRejected);
+  if (this.constructor !== Promise) {
+    return safeThen(this, onFulfilled, onRejected);
+  }
   var res = new Promise(noop);
-  this._24(new Handler(onFulfilled, onRejected, res));
+  handle(this, new Handler(onFulfilled, onRejected, res));
   return res;
 };
-Promise.prototype._24 = function(deferred) {
-  if (this._71 === 3) {
-    this._18._24(deferred);
-    return;
-  }
-  if (this._71 === 0) {
-    this._61.push(deferred);
-    return;
-  }
-  var state = this._71;
-  var value = this._18;
-  asap(function() {
-    var cb = state === 1 ? deferred.onFulfilled : deferred.onRejected
-    if (cb === null) {
-      (state === 1 ? deferred.promise._82(value) : deferred.promise._67(value))
-      return
-    }
-    var ret = tryCallOne(cb, value);
-    if (ret === IS_ERROR) {
-      deferred.promise._67(LAST_ERROR)
-    } else {
-      deferred.promise._82(ret)
-    }
+
+function safeThen(self, onFulfilled, onRejected) {
+  return new self.constructor(function (resolve, reject) {
+    var res = new Promise(noop);
+    res.then(resolve, reject);
+    handle(self, new Handler(onFulfilled, onRejected, res));
   });
 };
-Promise.prototype._82 = function(newValue) {
-  //Promise Resolution Procedure: https://github.com/promises-aplus/promises-spec#the-promise-resolution-procedure
-  if (newValue === this) {
-    return this._67(new TypeError('A promise cannot be resolved with itself.'))
+function handle(self, deferred) {
+  while (self._37 === 3) {
+    self = self._12;
   }
-  if (newValue && (typeof newValue === 'object' || typeof newValue === 'function')) {
-    var then = getThen(newValue);
-    if (then === IS_ERROR) {
-      return this._67(LAST_ERROR);
-    }
-    if (
-      then === this.then &&
-      newValue instanceof Promise &&
-      newValue._24 === this._24
-    ) {
-      this._71 = 3;
-      this._18 = newValue;
-      for (var i = 0; i < this._61.length; i++) {
-        newValue._24(this._61[i]);
+  if (self._37 === 0) {
+    self._59.push(deferred);
+    return;
+  }
+  asap(function() {
+    var cb = self._37 === 1 ? deferred.onFulfilled : deferred.onRejected;
+    if (cb === null) {
+      if (self._37 === 1) {
+        resolve(deferred.promise, self._12);
+      } else {
+        reject(deferred.promise, self._12);
       }
       return;
+    }
+    var ret = tryCallOne(cb, self._12);
+    if (ret === IS_ERROR) {
+      reject(deferred.promise, LAST_ERROR);
+    } else {
+      resolve(deferred.promise, ret);
+    }
+  });
+}
+function resolve(self, newValue) {
+  // Promise Resolution Procedure: https://github.com/promises-aplus/promises-spec#the-promise-resolution-procedure
+  if (newValue === self) {
+    return reject(
+      self,
+      new TypeError('A promise cannot be resolved with itself.')
+    );
+  }
+  if (
+    newValue &&
+    (typeof newValue === 'object' || typeof newValue === 'function')
+  ) {
+    var then = getThen(newValue);
+    if (then === IS_ERROR) {
+      return reject(self, LAST_ERROR);
+    }
+    if (
+      then === self.then &&
+      newValue instanceof Promise
+    ) {
+      self._37 = 3;
+      self._12 = newValue;
+      finale(self);
+      return;
     } else if (typeof then === 'function') {
-      doResolve(then.bind(newValue), this)
-      return
+      doResolve(then.bind(newValue), self);
+      return;
     }
   }
-  this._71 = 1
-  this._18 = newValue
-  this._94()
+  self._37 = 1;
+  self._12 = newValue;
+  finale(self);
 }
 
-Promise.prototype._67 = function (newValue) {
-  this._71 = 2
-  this._18 = newValue
-  this._94()
+function reject(self, newValue) {
+  self._37 = 2;
+  self._12 = newValue;
+  finale(self);
 }
-Promise.prototype._94 = function () {
-  for (var i = 0; i < this._61.length; i++)
-    this._24(this._61[i])
-  this._61 = null
+function finale(self) {
+  for (var i = 0; i < self._59.length; i++) {
+    handle(self, self._59[i]);
+  }
+  self._59 = null;
 }
-
 
 function Handler(onFulfilled, onRejected, promise){
-  this.onFulfilled = typeof onFulfilled === 'function' ? onFulfilled : null
-  this.onRejected = typeof onRejected === 'function' ? onRejected : null
+  this.onFulfilled = typeof onFulfilled === 'function' ? onFulfilled : null;
+  this.onRejected = typeof onRejected === 'function' ? onRejected : null;
   this.promise = promise;
 }
 
@@ -10686,211 +8852,224 @@ function Handler(onFulfilled, onRejected, promise){
 function doResolve(fn, promise) {
   var done = false;
   var res = tryCallTwo(fn, function (value) {
-    if (done) return
-    done = true
-    promise._82(value)
+    if (done) return;
+    done = true;
+    resolve(promise, value);
   }, function (reason) {
-    if (done) return
-    done = true
-    promise._67(reason)
+    if (done) return;
+    done = true;
+    reject(promise, reason);
   })
   if (!done && res === IS_ERROR) {
-    done = true
-    promise._67(LAST_ERROR)
+    done = true;
+    reject(promise, LAST_ERROR);
   }
 }
-},{"137":137}],175:[function(require,module,exports){
+
+},{"124":124}],155:[function(require,module,exports){
 'use strict';
 
-var Promise = require(174)
+var Promise = require(154);
 
-module.exports = Promise
+module.exports = Promise;
 Promise.prototype.done = function (onFulfilled, onRejected) {
-  var self = arguments.length ? this.then.apply(this, arguments) : this
+  var self = arguments.length ? this.then.apply(this, arguments) : this;
   self.then(null, function (err) {
     setTimeout(function () {
-      throw err
-    }, 0)
-  })
-}
-},{"174":174}],176:[function(require,module,exports){
+      throw err;
+    }, 0);
+  });
+};
+
+},{"154":154}],156:[function(require,module,exports){
 'use strict';
 
 //This file contains the ES6 extensions to the core Promises/A+ API
 
-var Promise = require(174)
-var asap = require(137)
+var Promise = require(154);
 
-module.exports = Promise
+module.exports = Promise;
 
 /* Static Functions */
 
-function ValuePromise(value) {
-  this.then = function (onFulfilled) {
-    if (typeof onFulfilled !== 'function') return this
-    return new Promise(function (resolve, reject) {
-      asap(function () {
-        try {
-          resolve(onFulfilled(value))
-        } catch (ex) {
-          reject(ex);
-        }
-      })
-    })
-  }
+var TRUE = valuePromise(true);
+var FALSE = valuePromise(false);
+var NULL = valuePromise(null);
+var UNDEFINED = valuePromise(undefined);
+var ZERO = valuePromise(0);
+var EMPTYSTRING = valuePromise('');
+
+function valuePromise(value) {
+  var p = new Promise(Promise._99);
+  p._37 = 1;
+  p._12 = value;
+  return p;
 }
-ValuePromise.prototype = Promise.prototype
-
-var TRUE = new ValuePromise(true)
-var FALSE = new ValuePromise(false)
-var NULL = new ValuePromise(null)
-var UNDEFINED = new ValuePromise(undefined)
-var ZERO = new ValuePromise(0)
-var EMPTYSTRING = new ValuePromise('')
-
 Promise.resolve = function (value) {
-  if (value instanceof Promise) return value
+  if (value instanceof Promise) return value;
 
-  if (value === null) return NULL
-  if (value === undefined) return UNDEFINED
-  if (value === true) return TRUE
-  if (value === false) return FALSE
-  if (value === 0) return ZERO
-  if (value === '') return EMPTYSTRING
+  if (value === null) return NULL;
+  if (value === undefined) return UNDEFINED;
+  if (value === true) return TRUE;
+  if (value === false) return FALSE;
+  if (value === 0) return ZERO;
+  if (value === '') return EMPTYSTRING;
 
   if (typeof value === 'object' || typeof value === 'function') {
     try {
-      var then = value.then
+      var then = value.then;
       if (typeof then === 'function') {
-        return new Promise(then.bind(value))
+        return new Promise(then.bind(value));
       }
     } catch (ex) {
       return new Promise(function (resolve, reject) {
-        reject(ex)
-      })
+        reject(ex);
+      });
     }
   }
-
-  return new ValuePromise(value)
-}
+  return valuePromise(value);
+};
 
 Promise.all = function (arr) {
-  var args = Array.prototype.slice.call(arr)
+  var args = Array.prototype.slice.call(arr);
 
   return new Promise(function (resolve, reject) {
-    if (args.length === 0) return resolve([])
-    var remaining = args.length
+    if (args.length === 0) return resolve([]);
+    var remaining = args.length;
     function res(i, val) {
       if (val && (typeof val === 'object' || typeof val === 'function')) {
-        var then = val.then
-        if (typeof then === 'function') {
-          then.call(val, function (val) { res(i, val) }, reject)
-          return
+        if (val instanceof Promise && val.then === Promise.prototype.then) {
+          while (val._37 === 3) {
+            val = val._12;
+          }
+          if (val._37 === 1) return res(i, val._12);
+          if (val._37 === 2) reject(val._12);
+          val.then(function (val) {
+            res(i, val);
+          }, reject);
+          return;
+        } else {
+          var then = val.then;
+          if (typeof then === 'function') {
+            var p = new Promise(then.bind(val));
+            p.then(function (val) {
+              res(i, val);
+            }, reject);
+            return;
+          }
         }
       }
-      args[i] = val
+      args[i] = val;
       if (--remaining === 0) {
         resolve(args);
       }
     }
     for (var i = 0; i < args.length; i++) {
-      res(i, args[i])
+      res(i, args[i]);
     }
-  })
-}
+  });
+};
 
 Promise.reject = function (value) {
-  return new Promise(function (resolve, reject) { 
+  return new Promise(function (resolve, reject) {
     reject(value);
   });
-}
+};
 
 Promise.race = function (values) {
-  return new Promise(function (resolve, reject) { 
+  return new Promise(function (resolve, reject) {
     values.forEach(function(value){
       Promise.resolve(value).then(resolve, reject);
-    })
+    });
   });
-}
+};
 
 /* Prototype Methods */
 
 Promise.prototype['catch'] = function (onRejected) {
   return this.then(null, onRejected);
-}
+};
 
-},{"137":137,"174":174}],177:[function(require,module,exports){
+},{"154":154}],157:[function(require,module,exports){
 'use strict';
 
-var Promise = require(174)
+var Promise = require(154);
 
-module.exports = Promise
+module.exports = Promise;
 Promise.prototype['finally'] = function (f) {
   return this.then(function (value) {
     return Promise.resolve(f()).then(function () {
-      return value
-    })
+      return value;
+    });
   }, function (err) {
     return Promise.resolve(f()).then(function () {
-      throw err
-    })
-  })
-}
+      throw err;
+    });
+  });
+};
 
-},{"174":174}],178:[function(require,module,exports){
+},{"154":154}],158:[function(require,module,exports){
 'use strict';
 
-module.exports = require(174)
-require(175)
-require(177)
-require(176)
-require(179)
+module.exports = require(154);
+require(155);
+require(157);
+require(156);
+require(159);
 
-},{"174":174,"175":175,"176":176,"177":177,"179":179}],179:[function(require,module,exports){
+},{"154":154,"155":155,"156":156,"157":157,"159":159}],159:[function(require,module,exports){
 'use strict';
 
-//This file contains then/promise specific extensions that are only useful for node.js interop
+// This file contains then/promise specific extensions that are only useful
+// for node.js interop
 
-var Promise = require(174)
-var asap = require(135)
+var Promise = require(154);
+var asap = require(122);
 
-module.exports = Promise
+module.exports = Promise;
 
 /* Static Functions */
 
 Promise.denodeify = function (fn, argumentCount) {
-  argumentCount = argumentCount || Infinity
+  argumentCount = argumentCount || Infinity;
   return function () {
-    var self = this
-    var args = Array.prototype.slice.call(arguments)
+    var self = this;
+    var args = Array.prototype.slice.call(arguments, 0,
+        argumentCount > 0 ? argumentCount : 0);
     return new Promise(function (resolve, reject) {
-      while (args.length && args.length > argumentCount) {
-        args.pop()
-      }
       args.push(function (err, res) {
-        if (err) reject(err)
-        else resolve(res)
+        if (err) reject(err);
+        else resolve(res);
       })
-      var res = fn.apply(self, args)
-      if (res && (typeof res === 'object' || typeof res === 'function') && typeof res.then === 'function') {
-        resolve(res)
+      var res = fn.apply(self, args);
+      if (res &&
+        (
+          typeof res === 'object' ||
+          typeof res === 'function'
+        ) &&
+        typeof res.then === 'function'
+      ) {
+        resolve(res);
       }
     })
   }
 }
 Promise.nodeify = function (fn) {
   return function () {
-    var args = Array.prototype.slice.call(arguments)
-    var callback = typeof args[args.length - 1] === 'function' ? args.pop() : null
-    var ctx = this
+    var args = Array.prototype.slice.call(arguments);
+    var callback =
+      typeof args[args.length - 1] === 'function' ? args.pop() : null;
+    var ctx = this;
     try {
-      return fn.apply(this, arguments).nodeify(callback, ctx)
+      return fn.apply(this, arguments).nodeify(callback, ctx);
     } catch (ex) {
       if (callback === null || typeof callback == 'undefined') {
-        return new Promise(function (resolve, reject) { reject(ex) })
+        return new Promise(function (resolve, reject) {
+          reject(ex);
+        });
       } else {
         asap(function () {
-          callback.call(ctx, ex)
+          callback.call(ctx, ex);
         })
       }
     }
@@ -10898,20 +9077,20 @@ Promise.nodeify = function (fn) {
 }
 
 Promise.prototype.nodeify = function (callback, ctx) {
-  if (typeof callback != 'function') return this
+  if (typeof callback != 'function') return this;
 
   this.then(function (value) {
     asap(function () {
-      callback.call(ctx, null, value)
-    })
+      callback.call(ctx, null, value);
+    });
   }, function (err) {
     asap(function () {
-      callback.call(ctx, err)
-    })
-  })
+      callback.call(ctx, err);
+    });
+  });
 }
 
-},{"135":135,"174":174}],180:[function(require,module,exports){
+},{"122":122,"154":154}],160:[function(require,module,exports){
 (function (global){
 // Copyright (c) Microsoft Open Technologies, Inc. All rights reserved. See License.txt in the project root for license information.
 
@@ -10941,7 +9120,7 @@ Promise.prototype.nodeify = function (callback, ctx) {
             return factory(root, exports, Rx);
         });
     } else if (typeof module === 'object' && module && module.exports === freeExports) {
-        module.exports = factory(root, module.exports, require(182));
+        module.exports = factory(root, module.exports, require(161));
     } else {
         root.Rx = factory(root, {}, root.Rx);
     }
@@ -11753,530 +9932,7 @@ Promise.prototype.nodeify = function (callback, ctx) {
 }));
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"182":182}],181:[function(require,module,exports){
-(function (global){
-// Copyright (c) Microsoft Open Technologies, Inc. All rights reserved. See License.txt in the project root for license information.
-
-;(function (factory) {
-    var objectTypes = {
-        'boolean': false,
-        'function': true,
-        'object': true,
-        'number': false,
-        'string': false,
-        'undefined': false
-    };
-
-    var root = (objectTypes[typeof window] && window) || this,
-        freeExports = objectTypes[typeof exports] && exports && !exports.nodeType && exports,
-        freeModule = objectTypes[typeof module] && module && !module.nodeType && module,
-        moduleExports = freeModule && freeModule.exports === freeExports && freeExports,
-        freeGlobal = objectTypes[typeof global] && global;
-
-    if (freeGlobal && (freeGlobal.global === freeGlobal || freeGlobal.window === freeGlobal)) {
-        root = freeGlobal;
-    }
-
-    // Because of build optimizers
-    if (typeof define === 'function' && define.amd) {
-        define(['rx'], function (Rx, exports) {
-            return factory(root, exports, Rx);
-        });
-    } else if (typeof module === 'object' && module && module.exports === freeExports) {
-        module.exports = factory(root, module.exports, require(182));
-    } else {
-        root.Rx = factory(root, {}, root.Rx);
-    }
-}.call(this, function (root, exp, Rx, undefined) {
-
-  var Observable = Rx.Observable,
-    observableProto = Observable.prototype,
-    AnonymousObservable = Rx.AnonymousObservable,
-    Subject = Rx.Subject,
-    AsyncSubject = Rx.AsyncSubject,
-    Observer = Rx.Observer,
-    ScheduledObserver = Rx.internals.ScheduledObserver,
-    disposableCreate = Rx.Disposable.create,
-    disposableEmpty = Rx.Disposable.empty,
-    CompositeDisposable = Rx.CompositeDisposable,
-    currentThreadScheduler = Rx.Scheduler.currentThread,
-    isFunction = Rx.helpers.isFunction,
-    inherits = Rx.internals.inherits,
-    addProperties = Rx.internals.addProperties,
-    checkDisposed = Rx.Disposable.checkDisposed;
-
-  // Utilities
-  function cloneArray(arr) {
-    var len = arr.length, a = new Array(len);
-    for(var i = 0; i < len; i++) { a[i] = arr[i]; }
-    return a;
-  }
-
-  /**
-   * Multicasts the source sequence notifications through an instantiated subject into all uses of the sequence within a selector function. Each
-   * subscription to the resulting sequence causes a separate multicast invocation, exposing the sequence resulting from the selector function's
-   * invocation. For specializations with fixed subject types, see Publish, PublishLast, and Replay.
-   *
-   * @example
-   * 1 - res = source.multicast(observable);
-   * 2 - res = source.multicast(function () { return new Subject(); }, function (x) { return x; });
-   *
-   * @param {Function|Subject} subjectOrSubjectSelector
-   * Factory function to create an intermediate subject through which the source sequence's elements will be multicast to the selector function.
-   * Or:
-   * Subject to push source elements into.
-   *
-   * @param {Function} [selector] Optional selector function which can use the multicasted source sequence subject to the policies enforced by the created subject. Specified only if <paramref name="subjectOrSubjectSelector" is a factory function.
-   * @returns {Observable} An observable sequence that contains the elements of a sequence produced by multicasting the source sequence within a selector function.
-   */
-  observableProto.multicast = function (subjectOrSubjectSelector, selector) {
-    var source = this;
-    return typeof subjectOrSubjectSelector === 'function' ?
-      new AnonymousObservable(function (observer) {
-        var connectable = source.multicast(subjectOrSubjectSelector());
-        return new CompositeDisposable(selector(connectable).subscribe(observer), connectable.connect());
-      }, source) :
-      new ConnectableObservable(source, subjectOrSubjectSelector);
-  };
-
-  /**
-   * Returns an observable sequence that is the result of invoking the selector on a connectable observable sequence that shares a single subscription to the underlying sequence.
-   * This operator is a specialization of Multicast using a regular Subject.
-   *
-   * @example
-   * var resres = source.publish();
-   * var res = source.publish(function (x) { return x; });
-   *
-   * @param {Function} [selector] Selector function which can use the multicasted source sequence as many times as needed, without causing multiple subscriptions to the source sequence. Subscribers to the given source will receive all notifications of the source from the time of the subscription on.
-   * @returns {Observable} An observable sequence that contains the elements of a sequence produced by multicasting the source sequence within a selector function.
-   */
-  observableProto.publish = function (selector) {
-    return selector && isFunction(selector) ?
-      this.multicast(function () { return new Subject(); }, selector) :
-      this.multicast(new Subject());
-  };
-
-  /**
-   * Returns an observable sequence that shares a single subscription to the underlying sequence.
-   * This operator is a specialization of publish which creates a subscription when the number of observers goes from zero to one, then shares that subscription with all subsequent observers until the number of observers returns to zero, at which point the subscription is disposed.
-   * @returns {Observable} An observable sequence that contains the elements of a sequence produced by multicasting the source sequence.
-   */
-  observableProto.share = function () {
-    return this.publish().refCount();
-  };
-
-  /**
-   * Returns an observable sequence that is the result of invoking the selector on a connectable observable sequence that shares a single subscription to the underlying sequence containing only the last notification.
-   * This operator is a specialization of Multicast using a AsyncSubject.
-   *
-   * @example
-   * var res = source.publishLast();
-   * var res = source.publishLast(function (x) { return x; });
-   *
-   * @param selector [Optional] Selector function which can use the multicasted source sequence as many times as needed, without causing multiple subscriptions to the source sequence. Subscribers to the given source will only receive the last notification of the source.
-   * @returns {Observable} An observable sequence that contains the elements of a sequence produced by multicasting the source sequence within a selector function.
-   */
-  observableProto.publishLast = function (selector) {
-    return selector && isFunction(selector) ?
-      this.multicast(function () { return new AsyncSubject(); }, selector) :
-      this.multicast(new AsyncSubject());
-  };
-
-  /**
-   * Returns an observable sequence that is the result of invoking the selector on a connectable observable sequence that shares a single subscription to the underlying sequence and starts with initialValue.
-   * This operator is a specialization of Multicast using a BehaviorSubject.
-   *
-   * @example
-   * var res = source.publishValue(42);
-   * var res = source.publishValue(function (x) { return x.select(function (y) { return y * y; }) }, 42);
-   *
-   * @param {Function} [selector] Optional selector function which can use the multicasted source sequence as many times as needed, without causing multiple subscriptions to the source sequence. Subscribers to the given source will receive immediately receive the initial value, followed by all notifications of the source from the time of the subscription on.
-   * @param {Mixed} initialValue Initial value received by observers upon subscription.
-   * @returns {Observable} An observable sequence that contains the elements of a sequence produced by multicasting the source sequence within a selector function.
-   */
-  observableProto.publishValue = function (initialValueOrSelector, initialValue) {
-    return arguments.length === 2 ?
-      this.multicast(function () {
-        return new BehaviorSubject(initialValue);
-      }, initialValueOrSelector) :
-      this.multicast(new BehaviorSubject(initialValueOrSelector));
-  };
-
-  /**
-   * Returns an observable sequence that shares a single subscription to the underlying sequence and starts with an initialValue.
-   * This operator is a specialization of publishValue which creates a subscription when the number of observers goes from zero to one, then shares that subscription with all subsequent observers until the number of observers returns to zero, at which point the subscription is disposed.
-   * @param {Mixed} initialValue Initial value received by observers upon subscription.
-   * @returns {Observable} An observable sequence that contains the elements of a sequence produced by multicasting the source sequence.
-   */
-  observableProto.shareValue = function (initialValue) {
-    return this.publishValue(initialValue).refCount();
-  };
-
-  /**
-   * Returns an observable sequence that is the result of invoking the selector on a connectable observable sequence that shares a single subscription to the underlying sequence replaying notifications subject to a maximum time length for the replay buffer.
-   * This operator is a specialization of Multicast using a ReplaySubject.
-   *
-   * @example
-   * var res = source.replay(null, 3);
-   * var res = source.replay(null, 3, 500);
-   * var res = source.replay(null, 3, 500, scheduler);
-   * var res = source.replay(function (x) { return x.take(6).repeat(); }, 3, 500, scheduler);
-   *
-   * @param selector [Optional] Selector function which can use the multicasted source sequence as many times as needed, without causing multiple subscriptions to the source sequence. Subscribers to the given source will receive all the notifications of the source subject to the specified replay buffer trimming policy.
-   * @param bufferSize [Optional] Maximum element count of the replay buffer.
-   * @param windowSize [Optional] Maximum time length of the replay buffer.
-   * @param scheduler [Optional] Scheduler where connected observers within the selector function will be invoked on.
-   * @returns {Observable} An observable sequence that contains the elements of a sequence produced by multicasting the source sequence within a selector function.
-   */
-  observableProto.replay = function (selector, bufferSize, windowSize, scheduler) {
-    return selector && isFunction(selector) ?
-      this.multicast(function () { return new ReplaySubject(bufferSize, windowSize, scheduler); }, selector) :
-      this.multicast(new ReplaySubject(bufferSize, windowSize, scheduler));
-  };
-
-  /**
-   * Returns an observable sequence that shares a single subscription to the underlying sequence replaying notifications subject to a maximum time length for the replay buffer.
-   * This operator is a specialization of replay which creates a subscription when the number of observers goes from zero to one, then shares that subscription with all subsequent observers until the number of observers returns to zero, at which point the subscription is disposed.
-   *
-   * @example
-   * var res = source.shareReplay(3);
-   * var res = source.shareReplay(3, 500);
-   * var res = source.shareReplay(3, 500, scheduler);
-   *
-
-   * @param bufferSize [Optional] Maximum element count of the replay buffer.
-   * @param window [Optional] Maximum time length of the replay buffer.
-   * @param scheduler [Optional] Scheduler where connected observers within the selector function will be invoked on.
-   * @returns {Observable} An observable sequence that contains the elements of a sequence produced by multicasting the source sequence.
-   */
-  observableProto.shareReplay = function (bufferSize, windowSize, scheduler) {
-    return this.replay(null, bufferSize, windowSize, scheduler).refCount();
-  };
-
-  var InnerSubscription = function (subject, observer) {
-    this.subject = subject;
-    this.observer = observer;
-  };
-
-  InnerSubscription.prototype.dispose = function () {
-    if (!this.subject.isDisposed && this.observer !== null) {
-      var idx = this.subject.observers.indexOf(this.observer);
-      this.subject.observers.splice(idx, 1);
-      this.observer = null;
-    }
-  };
-
-  /**
-   *  Represents a value that changes over time.
-   *  Observers can subscribe to the subject to receive the last (or initial) value and all subsequent notifications.
-   */
-  var BehaviorSubject = Rx.BehaviorSubject = (function (__super__) {
-    function subscribe(observer) {
-      checkDisposed(this);
-      if (!this.isStopped) {
-        this.observers.push(observer);
-        observer.onNext(this.value);
-        return new InnerSubscription(this, observer);
-      }
-      if (this.hasError) {
-        observer.onError(this.error);
-      } else {
-        observer.onCompleted();
-      }
-      return disposableEmpty;
-    }
-
-    inherits(BehaviorSubject, __super__);
-
-    /**
-     *  Initializes a new instance of the BehaviorSubject class which creates a subject that caches its last value and starts with the specified value.
-     *  @param {Mixed} value Initial value sent to observers when no other value has been received by the subject yet.
-     */
-    function BehaviorSubject(value) {
-      __super__.call(this, subscribe);
-      this.value = value,
-      this.observers = [],
-      this.isDisposed = false,
-      this.isStopped = false,
-      this.hasError = false;
-    }
-
-    addProperties(BehaviorSubject.prototype, Observer, {
-      /**
-       * Gets the current value or throws an exception.
-       * Value is frozen after onCompleted is called.
-       * After onError is called always throws the specified exception.
-       * An exception is always thrown after dispose is called.
-       * @returns {Mixed} The initial value passed to the constructor until onNext is called; after which, the last value passed to onNext.
-       */
-      getValue: function () {
-          checkDisposed(this);
-          if (this.hasError) {
-              throw this.error;
-          }
-          return this.value;
-      },
-      /**
-       * Indicates whether the subject has observers subscribed to it.
-       * @returns {Boolean} Indicates whether the subject has observers subscribed to it.
-       */
-      hasObservers: function () { return this.observers.length > 0; },
-      /**
-       * Notifies all subscribed observers about the end of the sequence.
-       */
-      onCompleted: function () {
-        checkDisposed(this);
-        if (this.isStopped) { return; }
-        this.isStopped = true;
-        for (var i = 0, os = cloneArray(this.observers), len = os.length; i < len; i++) {
-          os[i].onCompleted();
-        }
-
-        this.observers.length = 0;
-      },
-      /**
-       * Notifies all subscribed observers about the exception.
-       * @param {Mixed} error The exception to send to all observers.
-       */
-      onError: function (error) {
-        checkDisposed(this);
-        if (this.isStopped) { return; }
-        this.isStopped = true;
-        this.hasError = true;
-        this.error = error;
-
-        for (var i = 0, os = cloneArray(this.observers), len = os.length; i < len; i++) {
-          os[i].onError(error);
-        }
-
-        this.observers.length = 0;
-      },
-      /**
-       * Notifies all subscribed observers about the arrival of the specified element in the sequence.
-       * @param {Mixed} value The value to send to all observers.
-       */
-      onNext: function (value) {
-        checkDisposed(this);
-        if (this.isStopped) { return; }
-        this.value = value;
-        for (var i = 0, os = cloneArray(this.observers), len = os.length; i < len; i++) {
-          os[i].onNext(value);
-        }
-      },
-      /**
-       * Unsubscribe all observers and release resources.
-       */
-      dispose: function () {
-        this.isDisposed = true;
-        this.observers = null;
-        this.value = null;
-        this.exception = null;
-      }
-    });
-
-    return BehaviorSubject;
-  }(Observable));
-
-  /**
-   * Represents an object that is both an observable sequence as well as an observer.
-   * Each notification is broadcasted to all subscribed and future observers, subject to buffer trimming policies.
-   */
-  var ReplaySubject = Rx.ReplaySubject = (function (__super__) {
-
-    var maxSafeInteger = Math.pow(2, 53) - 1;
-
-    function createRemovableDisposable(subject, observer) {
-      return disposableCreate(function () {
-        observer.dispose();
-        !subject.isDisposed && subject.observers.splice(subject.observers.indexOf(observer), 1);
-      });
-    }
-
-    function subscribe(observer) {
-      var so = new ScheduledObserver(this.scheduler, observer),
-        subscription = createRemovableDisposable(this, so);
-      checkDisposed(this);
-      this._trim(this.scheduler.now());
-      this.observers.push(so);
-
-      for (var i = 0, len = this.q.length; i < len; i++) {
-        so.onNext(this.q[i].value);
-      }
-
-      if (this.hasError) {
-        so.onError(this.error);
-      } else if (this.isStopped) {
-        so.onCompleted();
-      }
-
-      so.ensureActive();
-      return subscription;
-    }
-
-    inherits(ReplaySubject, __super__);
-
-    /**
-     *  Initializes a new instance of the ReplaySubject class with the specified buffer size, window size and scheduler.
-     *  @param {Number} [bufferSize] Maximum element count of the replay buffer.
-     *  @param {Number} [windowSize] Maximum time length of the replay buffer.
-     *  @param {Scheduler} [scheduler] Scheduler the observers are invoked on.
-     */
-    function ReplaySubject(bufferSize, windowSize, scheduler) {
-      this.bufferSize = bufferSize == null ? maxSafeInteger : bufferSize;
-      this.windowSize = windowSize == null ? maxSafeInteger : windowSize;
-      this.scheduler = scheduler || currentThreadScheduler;
-      this.q = [];
-      this.observers = [];
-      this.isStopped = false;
-      this.isDisposed = false;
-      this.hasError = false;
-      this.error = null;
-      __super__.call(this, subscribe);
-    }
-
-    addProperties(ReplaySubject.prototype, Observer.prototype, {
-      /**
-       * Indicates whether the subject has observers subscribed to it.
-       * @returns {Boolean} Indicates whether the subject has observers subscribed to it.
-       */
-      hasObservers: function () {
-        return this.observers.length > 0;
-      },
-      _trim: function (now) {
-        while (this.q.length > this.bufferSize) {
-          this.q.shift();
-        }
-        while (this.q.length > 0 && (now - this.q[0].interval) > this.windowSize) {
-          this.q.shift();
-        }
-      },
-      /**
-       * Notifies all subscribed observers about the arrival of the specified element in the sequence.
-       * @param {Mixed} value The value to send to all observers.
-       */
-      onNext: function (value) {
-        checkDisposed(this);
-        if (this.isStopped) { return; }
-        var now = this.scheduler.now();
-        this.q.push({ interval: now, value: value });
-        this._trim(now);
-
-        for (var i = 0, os = cloneArray(this.observers), len = os.length; i < len; i++) {
-          var observer = os[i];
-          observer.onNext(value);
-          observer.ensureActive();
-        }
-      },
-      /**
-       * Notifies all subscribed observers about the exception.
-       * @param {Mixed} error The exception to send to all observers.
-       */
-      onError: function (error) {
-        checkDisposed(this);
-        if (this.isStopped) { return; }
-        this.isStopped = true;
-        this.error = error;
-        this.hasError = true;
-        var now = this.scheduler.now();
-        this._trim(now);
-        for (var i = 0, os = cloneArray(this.observers), len = os.length; i < len; i++) {
-          var observer = os[i];
-          observer.onError(error);
-          observer.ensureActive();
-        }
-        this.observers.length = 0;
-      },
-      /**
-       * Notifies all subscribed observers about the end of the sequence.
-       */
-      onCompleted: function () {
-        checkDisposed(this);
-        if (this.isStopped) { return; }
-        this.isStopped = true;
-        var now = this.scheduler.now();
-        this._trim(now);
-        for (var i = 0, os = cloneArray(this.observers), len = os.length; i < len; i++) {
-          var observer = os[i];
-          observer.onCompleted();
-          observer.ensureActive();
-        }
-        this.observers.length = 0;
-      },
-      /**
-       * Unsubscribe all observers and release resources.
-       */
-      dispose: function () {
-        this.isDisposed = true;
-        this.observers = null;
-      }
-    });
-
-    return ReplaySubject;
-  }(Observable));
-
-  var ConnectableObservable = Rx.ConnectableObservable = (function (__super__) {
-    inherits(ConnectableObservable, __super__);
-
-    function ConnectableObservable(source, subject) {
-      var hasSubscription = false,
-        subscription,
-        sourceObservable = source.asObservable();
-
-      this.connect = function () {
-        if (!hasSubscription) {
-          hasSubscription = true;
-          subscription = new CompositeDisposable(sourceObservable.subscribe(subject), disposableCreate(function () {
-            hasSubscription = false;
-          }));
-        }
-        return subscription;
-      };
-
-      __super__.call(this, function (o) { return subject.subscribe(o); });
-    }
-
-    ConnectableObservable.prototype.refCount = function () {
-      var connectableSubscription, count = 0, source = this;
-      return new AnonymousObservable(function (observer) {
-          var shouldConnect = ++count === 1,
-            subscription = source.subscribe(observer);
-          shouldConnect && (connectableSubscription = source.connect());
-          return function () {
-            subscription.dispose();
-            --count === 0 && connectableSubscription.dispose();
-          };
-      });
-    };
-
-    return ConnectableObservable;
-  }(Observable));
-
-  /**
-   * Returns an observable sequence that shares a single subscription to the underlying sequence. This observable sequence
-   * can be resubscribed to, even if all prior subscriptions have ended. (unlike `.publish().refCount()`)
-   * @returns {Observable} An observable sequence that contains the elements of a sequence produced by multicasting the source.
-   */
-  observableProto.singleInstance = function() {
-    var source = this, hasObservable = false, observable;
-
-    function getObservable() {
-      if (!hasObservable) {
-        hasObservable = true;
-        observable = source.finally(function() { hasObservable = false; }).publish().refCount();
-      }
-      return observable;
-    };
-
-    return new AnonymousObservable(function(o) {
-      return getObservable().subscribe(o);
-    });
-  };
-
-    return Rx;
-}));
-
-}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"182":182}],182:[function(require,module,exports){
+},{"161":161}],161:[function(require,module,exports){
 (function (process,global){
 // Copyright (c) Microsoft Open Technologies, Inc. All rights reserved. See License.txt in the project root for license information.
 
@@ -17866,6 +15522,6 @@ Promise.prototype.nodeify = function (callback, ctx) {
 
 }.call(this));
 
-}).call(this,require(140),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"140":140}]},{},[1])(1)
+}).call(this,require(127),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
+},{"127":127}]},{},[1])(1)
 });
